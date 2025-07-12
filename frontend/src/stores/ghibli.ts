@@ -48,6 +48,61 @@ export const useGhibliStore = defineStore('ghibli', {
       return this.processImage(file, 'upscale', { scale_factor: scaleFactor })
     },
     
+    async generateImage(prompt: string, negativePrompt?: string, model?: string): Promise<string> {
+      this.isProcessing = true
+      
+      try {
+        const formData = new FormData()
+        formData.append('prompt', prompt)
+        if (negativePrompt) {
+          formData.append('negative_prompt', negativePrompt)
+        }
+        if (model) {
+          formData.append('model', model)
+        }
+        
+        const response = await axios.post<ProcessingResult>(
+          `${API_BASE_URL}/api/text-to-image`,
+          formData,
+          {
+            headers: {
+              'Content-Type': 'multipart/form-data'
+            },
+            timeout: 120000 // 2分钟超时，因为文生图可能较慢
+          }
+        )
+        
+        if (response.data.success && response.data.processed_image_url) {
+          const fullImageUrl = `${API_BASE_URL}${response.data.processed_image_url}`
+          
+          this.processingHistory.push({
+            original: '', // 文生图没有原图
+            result: fullImageUrl,
+            timestamp: Date.now(),
+            processingType: response.data.processing_type,
+            processingTime: response.data.processing_time
+          })
+          
+          return fullImageUrl
+        } else {
+          throw new Error(response.data.message || '文生图失败')
+        }
+      } catch (error) {
+        if (axios.isAxiosError(error)) {
+          if (error.code === 'ECONNABORTED') {
+            throw new Error('请求超时，图像生成可能需要更长时间')
+          } else if (error.response) {
+            throw new Error(error.response.data?.detail || '服务器错误')
+          } else if (error.request) {
+            throw new Error('无法连接到服务器，请检查网络连接')
+          }
+        }
+        throw new Error('生成图像时发生未知错误')
+      } finally {
+        this.isProcessing = false
+      }
+    },
+    
     async processImage(file: File, processingType: string, parameters?: Record<string, any>): Promise<string> {
       this.isProcessing = true
       

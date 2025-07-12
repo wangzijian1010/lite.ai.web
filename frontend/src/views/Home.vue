@@ -56,10 +56,67 @@
                   >
                     🔍 AI超分放大
                   </button>
+                  <button 
+                    @click="selectedProcessing = 'text_to_image'"
+                    :class="['processing-btn', { active: selectedProcessing === 'text_to_image' }]"
+                  >
+                    🎯 AI文生图
+                  </button>
                 </div>
               </div>
               
-              <ImageUpload @upload="handleImageUpload" :loading="processing" />
+              <!-- 文生图参数输入 -->
+              <div v-if="selectedProcessing === 'text_to_image'" class="text-to-image-inputs">
+                <div class="input-group">
+                  <label for="prompt">正向提示词 (必填)</label>
+                  <textarea 
+                    id="prompt"
+                    v-model="textToImageParams.prompt"
+                    placeholder="描述您想要生成的图像，例如：a beautiful landscape with mountains and lake"
+                    rows="3"
+                    class="input-field"
+                  ></textarea>
+                </div>
+                
+                <div class="input-group">
+                  <label for="negative_prompt">负向提示词</label>
+                  <textarea 
+                    id="negative_prompt"
+                    v-model="textToImageParams.negative_prompt"
+                    placeholder="描述您不想要的元素，例如：blurry, low quality, text"
+                    rows="2"
+                    class="input-field"
+                  ></textarea>
+                </div>
+                
+                <div class="input-group">
+                  <label for="model">模型名称 (可选)</label>
+                  <input 
+                    id="model"
+                    v-model="textToImageParams.model"
+                    type="text"
+                    placeholder="例如：epicphotogasm_ultimateFidelity.safetensors"
+                    class="input-field"
+                  />
+                </div>
+                
+                <button 
+                  @click="handleTextToImage"
+                  :disabled="processing || !textToImageParams.prompt.trim()"
+                  class="btn btn-primary generate-btn"
+                >
+                  <span v-if="!processing">🎯 生成图像</span>
+                  <span v-else class="loading-content">
+                    <div class="loading"></div>
+                    正在生成...
+                  </span>
+                </button>
+              </div>
+              
+              <!-- 图片上传 (非文生图功能) -->
+              <div v-else>
+                <ImageUpload @upload="handleImageUpload" :loading="processing" />
+              </div>
             </div>
           </div>
 
@@ -117,7 +174,12 @@ const ghibliStore = useGhibliStore()
 const originalImage = ref<string>('')
 const resultImage = ref<string>('')
 const processing = ref(false)
-const selectedProcessing = ref<'ghibli_style' | 'grayscale' | 'upscale'>('ghibli_style')
+const selectedProcessing = ref<'ghibli_style' | 'grayscale' | 'upscale' | 'text_to_image'>('ghibli_style')
+const textToImageParams = ref({
+  prompt: '',
+  negative_prompt: 'text, watermark, blurry, low quality',
+  model: ''
+})
 
 onMounted(() => {
   // 加载可用的处理器
@@ -145,6 +207,27 @@ const handleImageUpload = async (file: File) => {
   } catch (error) {
     console.error('转换失败:', error)
     const errorMessage = error instanceof Error ? error.message : '图片转换失败，请重试'
+    alert(errorMessage)
+  } finally {
+    processing.value = false
+  }
+}
+
+const handleTextToImage = async () => {
+  try {
+    processing.value = true
+    originalImage.value = '' // 文生图没有原图
+    
+    const result = await ghibliStore.generateImage(
+      textToImageParams.value.prompt,
+      textToImageParams.value.negative_prompt || undefined,
+      textToImageParams.value.model || undefined
+    )
+    
+    resultImage.value = result
+  } catch (error) {
+    console.error('文生图失败:', error)
+    const errorMessage = error instanceof Error ? error.message : '图像生成失败，请重试'
     alert(errorMessage)
   } finally {
     processing.value = false
@@ -333,6 +416,70 @@ const handleImageUpload = async (file: File) => {
   background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
   color: white;
   box-shadow: 0 8px 25px rgba(102, 126, 234, 0.3);
+}
+
+/* Text to Image Inputs */
+.text-to-image-inputs {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+.input-group {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.input-group label {
+  color: white;
+  font-weight: 600;
+  font-size: 1rem;
+}
+
+.input-field {
+  padding: 12px 16px;
+  border: 2px solid rgba(255, 255, 255, 0.2);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.05);
+  color: white;
+  font-size: 1rem;
+  resize: vertical;
+  transition: all 0.3s ease;
+  backdrop-filter: blur(10px);
+}
+
+.input-field:focus {
+  outline: none;
+  border-color: rgba(120, 119, 198, 0.6);
+  background: rgba(120, 119, 198, 0.1);
+  box-shadow: 0 0 0 3px rgba(120, 119, 198, 0.2);
+}
+
+.input-field::placeholder {
+  color: rgba(255, 255, 255, 0.5);
+}
+
+.generate-btn {
+  margin-top: 16px;
+  min-height: 52px;
+  font-size: 1.1rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+}
+
+.generate-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+  transform: none !important;
+}
+
+.loading-content {
+  display: flex;
+  align-items: center;
+  gap: 12px;
 }
 
 /* Features Section */

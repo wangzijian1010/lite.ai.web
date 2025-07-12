@@ -13,6 +13,11 @@ class Settings(BaseSettings):
     upscale_api_key: str = "your-api-key-here"
     upscale_api_timeout: int = 30
     
+    # ComfyUI 配置
+    comfyui_server_address: str = "127.0.0.1:8188"
+    comfyui_workflow_json: str = "AI_Image_API.json"
+    comfyui_timeout: int = 120
+    
     @property
     def allowed_extensions_list(self) -> List[str]:
         return [ext.strip().lower() for ext in self.allowed_extensions.split(",")]

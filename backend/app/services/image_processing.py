@@ -255,6 +255,327 @@ class UpscaleProcessor(ImageProcessor):
             
         return True
 
+class TextToImageProcessor(ImageProcessor):
+    """
+    ComfyUI 文生图处理器
+    
+    这个处理器不需要输入图像，而是基于文字描述生成图像
+    """
+    
+    def process(self, image: Image.Image = None, parameters: Dict[str, Any] = None) -> Image.Image:
+        """
+        使用 ComfyUI 进行文生图
+        
+        Args:
+            image: 对于文生图功能，这个参数被忽略
+            parameters: 包含文生图参数：
+                - prompt: 正向提示词 (必需)
+                - negative_prompt: 负向提示词 (可选)
+                - model: 模型名称 (可选)
+                - width: 图片宽度 (可选, 默认512)
+                - height: 图片高度 (可选, 默认512)
+                - steps: 采样步数 (可选, 默认20)
+                - cfg: CFG值 (可选, 默认8)
+        
+        Returns:
+            生成的图像
+        """
+        if not parameters or 'prompt' not in parameters:
+            raise ValueError("文生图需要提供 prompt 参数")
+        
+        # 提取参数
+        prompt = parameters['prompt']
+        negative_prompt = parameters.get('negative_prompt', 'text, watermark')
+        model = parameters.get('model', None)
+        width = parameters.get('width', 512)
+        height = parameters.get('height', 512)
+        steps = parameters.get('steps', 20)
+        cfg = parameters.get('cfg', 8)
+        
+        try:
+            # 调用 ComfyUI API
+            image_data = self._call_comfyui_api(
+                prompt=prompt,
+                negative_prompt=negative_prompt,
+                model=model,
+                width=width,
+                height=height,
+                steps=steps,
+                cfg=cfg
+            )
+            
+            # 将图像数据转换为 PIL Image
+            return Image.open(io.BytesIO(image_data))
+            
+        except Exception as e:
+            print(f"ComfyUI API调用失败: {e}")
+            # 降级方案：生成一个简单的纯色图像作为占位符
+            return self._fallback_generate_placeholder(prompt, width, height)
+    
+    def _call_comfyui_api(self, prompt: str, negative_prompt: str, model: str = None, 
+                         width: int = 512, height: int = 512, steps: int = 20, cfg: int = 8) -> bytes:
+        """
+        调用 ComfyUI API 生成图像
+        
+        基于提供的 ComfyUI 客户端代码实现
+        """
+        import json
+        import uuid
+        from urllib.parse import urlencode
+        
+        server_address = settings.comfyui_server_address
+        client_id = str(uuid.uuid4())
+        
+        # 1. 加载工作流模板
+        workflow = self._load_workflow_template()
+        if not workflow:
+            raise Exception("无法加载 ComfyUI 工作流模板")
+        
+        # 2. 更新工作流参数
+        workflow = self._update_workflow_prompts(
+            workflow, prompt, negative_prompt, model, width, height, steps, cfg
+        )
+        
+        # 3. 提交到队列
+        prompt_data = {"prompt": workflow, "client_id": client_id}
+        data = json.dumps(prompt_data).encode('utf-8')
+        
+        response = requests.post(
+            f"http://{server_address}/prompt", 
+            data=data,
+            timeout=settings.comfyui_timeout
+        )
+        result = response.json()
+        prompt_id = result['prompt_id']
+        
+        print(f"ComfyUI 任务ID: {prompt_id}")
+        
+        # 4. 等待完成
+        history = self._wait_for_completion(server_address, prompt_id)
+        
+        # 5. 获取生成的图像
+        for node_id in history['outputs']:
+            node_output = history['outputs'][node_id]
+            if 'images' in node_output:
+                for image_info in node_output['images']:
+                    image_data = self._get_image(
+                        server_address, image_info['filename'], 
+                        image_info['subfolder'], image_info['type']
+                    )
+                    return image_data
+        
+        raise Exception("未能从 ComfyUI 获取生成的图像")
+    
+    def _load_workflow_template(self) -> Dict:
+        """加载工作流模板"""
+        import json
+        import os
+        
+        json_file_path = os.path.join(os.getcwd(), settings.comfyui_workflow_json)
+        
+        try:
+            with open(json_file_path, 'r', encoding='utf-8') as f:
+                workflow = json.load(f)
+            return workflow
+        except FileNotFoundError:
+            print(f"找不到工作流文件: {json_file_path}")
+            # 返回一个简单的默认工作流模板
+            return self._get_default_workflow()
+        except json.JSONDecodeError:
+            print(f"JSON文件格式错误: {json_file_path}")
+            return None
+    
+    def _get_default_workflow(self) -> Dict:
+        """
+        返回一个基本的工作流模板
+        如果找不到 AI_Image_API.json 文件时使用
+        """
+        return {
+            "1": {
+                "class_type": "CheckpointLoaderSimple",
+                "inputs": {"ckpt_name": "model.safetensors"}
+            },
+            "2": {
+                "class_type": "CLIPTextEncode",
+                "inputs": {"text": "default prompt", "clip": ["1", 1]}
+            },
+            "3": {
+                "class_type": "CLIPTextEncode", 
+                "inputs": {"text": "text, watermark", "clip": ["1", 1]}
+            },
+            "4": {
+                "class_type": "EmptyLatentImage",
+                "inputs": {"width": 512, "height": 512, "batch_size": 1}
+            },
+            "5": {
+                "class_type": "KSampler",
+                "inputs": {
+                    "seed": 42,
+                    "steps": 20,
+                    "cfg": 8,
+                    "sampler_name": "euler",
+                    "scheduler": "normal",
+                    "denoise": 1,
+                    "model": ["1", 0],
+                    "positive": ["2", 0],
+                    "negative": ["3", 0],
+                    "latent_image": ["4", 0]
+                }
+            },
+            "6": {
+                "class_type": "VAEDecode",
+                "inputs": {"samples": ["5", 0], "vae": ["1", 2]}
+            },
+            "7": {
+                "class_type": "SaveImage",
+                "inputs": {"images": ["6", 0], "filename_prefix": "ComfyUI"}
+            }
+        }
+    
+    def _update_workflow_prompts(self, workflow: Dict, positive_prompt: str, negative_prompt: str,
+                                model_name: str = None, width: int = None, height: int = None,
+                                steps: int = None, cfg: int = None) -> Dict:
+        """更新工作流中的提示词和参数"""
+        if not workflow:
+            return None
+        
+        # 更新正面提示词
+        for node_id, node in workflow.items():
+            if (node.get("class_type") == "CLIPTextEncode" and 
+                "text" in node.get("inputs", {}) and 
+                node["inputs"]["text"] != negative_prompt):
+                workflow[node_id]["inputs"]["text"] = positive_prompt
+                break
+        
+        # 更新负面提示词
+        for node_id, node in workflow.items():
+            if (node.get("class_type") == "CLIPTextEncode" and 
+                "text" in node.get("inputs", {}) and 
+                node["inputs"]["text"] != positive_prompt):
+                workflow[node_id]["inputs"]["text"] = negative_prompt
+                break
+        
+        # 更新模型
+        if model_name:
+            for node_id, node in workflow.items():
+                if node.get("class_type") == "CheckpointLoaderSimple":
+                    node["inputs"]["ckpt_name"] = model_name
+                    break
+        
+        # 更新其他参数
+        for node_id, node in workflow.items():
+            if node.get("class_type") == "KSampler":
+                inputs = node.get("inputs", {})
+                inputs["seed"] = int(time.time() * 1000) % 1000000000  # 随机种子
+                if steps is not None:
+                    inputs["steps"] = steps
+                if cfg is not None:
+                    inputs["cfg"] = cfg
+            elif node.get("class_type") == "EmptyLatentImage":
+                inputs = node.get("inputs", {})
+                if width is not None:
+                    inputs["width"] = width
+                if height is not None:
+                    inputs["height"] = height
+        
+        return workflow
+    
+    def _wait_for_completion(self, server_address: str, prompt_id: str) -> Dict:
+        """等待图像生成完成"""
+        print("正在等待 ComfyUI 生成图像...")
+        max_wait_time = settings.comfyui_timeout
+        start_time = time.time()
+        
+        while time.time() - start_time < max_wait_time:
+            try:
+                response = requests.get(f"http://{server_address}/history/{prompt_id}")
+                history = response.json()
+                if prompt_id in history:
+                    return history[prompt_id]
+            except Exception as e:
+                print(f"检查任务状态时出错: {e}")
+            
+            time.sleep(1)
+        
+        raise Exception(f"ComfyUI 任务超时 ({max_wait_time}秒)")
+    
+    def _get_image(self, server_address: str, filename: str, subfolder: str, folder_type: str) -> bytes:
+        """从服务器获取生成的图像"""
+        from urllib.parse import urlencode
+        data = {"filename": filename, "subfolder": subfolder, "type": folder_type}
+        url_values = urlencode(data)
+        
+        response = requests.get(f"http://{server_address}/view?{url_values}")
+        return response.content
+    
+    def _fallback_generate_placeholder(self, prompt: str, width: int = 512, height: int = 512) -> Image.Image:
+        """
+        降级方案：生成一个包含提示词的占位图像
+        当 ComfyUI 不可用时使用
+        """
+        from PIL import ImageDraw, ImageFont
+        
+        # 创建一个渐变背景
+        img = Image.new('RGB', (width, height), color=(100, 150, 200))
+        draw = ImageDraw.Draw(img)
+        
+        # 尝试加载字体，如果失败则使用默认字体
+        try:
+            font = ImageFont.truetype("arial.ttf", 20)
+        except:
+            font = ImageFont.load_default()
+        
+        # 添加文字
+        text_lines = [
+            "ComfyUI 暂时不可用",
+            "这是占位图像",
+            f"提示词: {prompt[:30]}..."
+        ]
+        
+        y_offset = height // 2 - 40
+        for line in text_lines:
+            bbox = draw.textbbox((0, 0), line, font=font)
+            text_width = bbox[2] - bbox[0]
+            x = (width - text_width) // 2
+            draw.text((x, y_offset), line, fill=(255, 255, 255), font=font)
+            y_offset += 30
+        
+        return img
+    
+    def get_name(self) -> str:
+        return "text_to_image"
+    
+    def get_description(self) -> str:
+        return "使用 ComfyUI 根据文字描述生成图像"
+    
+    def validate_parameters(self, parameters: Dict[str, Any]) -> bool:
+        """验证文生图参数"""
+        if not parameters:
+            return False
+        
+        # 必须包含 prompt
+        if 'prompt' not in parameters:
+            return False
+        
+        # 验证可选参数的类型和范围
+        width = parameters.get('width')
+        if width and (not isinstance(width, int) or width < 64 or width > 2048):
+            return False
+        
+        height = parameters.get('height')
+        if height and (not isinstance(height, int) or height < 64 or height > 2048):
+            return False
+        
+        steps = parameters.get('steps')
+        if steps and (not isinstance(steps, int) or steps < 1 or steps > 100):
+            return False
+        
+        cfg = parameters.get('cfg')
+        if cfg and (not isinstance(cfg, (int, float)) or cfg < 1 or cfg > 30):
+            return False
+        
+        return True
+
 class ImageProcessingService:
     """
     图像处理服务管理器
@@ -272,6 +593,7 @@ class ImageProcessingService:
         self.register_processor(GrayscaleProcessor())
         self.register_processor(GhibliStyleProcessor())
         self.register_processor(UpscaleProcessor())
+        self.register_processor(TextToImageProcessor())
     
     def register_processor(self, processor: ImageProcessor):
         """

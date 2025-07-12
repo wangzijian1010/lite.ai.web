@@ -3,6 +3,8 @@ from fastapi.responses import FileResponse
 from typing import Optional
 import os
 import json
+import io
+from PIL import Image
 
 from app.models.schemas import ImageProcessResponse, ErrorResponse
 from app.services.image_processing import image_processing_service
@@ -151,3 +153,102 @@ async def convert_to_ghibli_style(
         processing_type="ghibli_style", 
         parameters=None
     )
+
+@router.post("/text-to-image", response_model=ImageProcessResponse)
+async def text_to_image(
+    prompt: str = Form(..., description="正向提示词"),
+    negative_prompt: str = Form("text, watermark", description="负向提示词"),
+    model: Optional[str] = Form(None, description="模型名称"),
+    width: int = Form(512, description="图片宽度"),
+    height: int = Form(512, description="图片高度"),
+    steps: int = Form(20, description="采样步数"),
+    cfg: float = Form(8.0, description="CFG值")
+):
+    """
+    ComfyUI 文生图端点
+    
+    Args:
+        prompt: 正向提示词 (必填)
+        negative_prompt: 负向提示词 (默认: "text, watermark")
+        model: 模型名称 (可选)
+        width: 图片宽度 (默认: 512)
+        height: 图片高度 (默认: 512)
+        steps: 采样步数 (默认: 20)
+        cfg: CFG值 (默认: 8.0)
+    
+    Returns:
+        ImageProcessResponse: 生成结果
+    
+    Example:
+        curl -X POST "http://localhost:8000/api/text-to-image" \
+             -F "prompt=a beautiful landscape" \
+             -F "negative_prompt=blurry, low quality" \
+             -F "model=epicphotogasm_ultimateFidelity.safetensors"
+    """
+    try:
+        # 准备参数
+        parameters = {
+            "prompt": prompt,
+            "negative_prompt": negative_prompt,
+            "width": width,
+            "height": height,
+            "steps": steps,
+            "cfg": cfg
+        }
+        
+        if model:
+            parameters["model"] = model
+        
+        # 验证参数
+        processor = image_processing_service.processors.get("text_to_image")
+        if not processor:
+            raise HTTPException(status_code=500, detail="文生图处理器未找到")
+        
+        if not processor.validate_parameters(parameters):
+            raise HTTPException(status_code=400, detail="参数验证失败")
+        
+        # 处理图像（注意：文生图不需要输入图像）
+        try:
+            # 创建一个虚拟的图像数据，因为 process_image 期望图像数据
+            dummy_image = Image.new('RGB', (1, 1), color=(255, 255, 255))
+            dummy_buffer = io.BytesIO()
+            dummy_image.save(dummy_buffer, format='PNG')
+            dummy_data = dummy_buffer.getvalue()
+            
+            processed_data, processing_time = image_processing_service.process_image(
+                dummy_data, 
+                "text_to_image", 
+                parameters
+            )
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e))
+        except Exception as e:
+            raise HTTPException(
+                status_code=500, 
+                detail=f"文生图处理失败: {str(e)}"
+            )
+        
+        # 保存生成的图像
+        processed_file_path = save_processed_image(
+            processed_data, 
+            f"text_to_image_{prompt[:20]}"
+        )
+        
+        # 生成访问URL
+        processed_image_url = get_file_url(processed_file_path)
+        
+        return ImageProcessResponse(
+            success=True,
+            message="文生图生成成功",
+            processed_image_url=processed_image_url,
+            processing_type="text_to_image",
+            processing_time=processing_time
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"服务器内部错误: {str(e)}"
+        )
