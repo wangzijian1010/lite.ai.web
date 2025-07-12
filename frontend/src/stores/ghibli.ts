@@ -11,6 +11,24 @@ interface ProcessingResult {
   processing_time: number
 }
 
+interface AsyncTaskResponse {
+  success: boolean
+  message: string
+  task_id: string
+  prompt_id?: string
+  estimated_time?: number
+}
+
+interface ProgressResponse {
+  success: boolean
+  task_id: string
+  status: string  // 'pending', 'running', 'completed', 'failed'
+  progress: number  // 0-100
+  message: string
+  result_url?: string
+  error?: string
+}
+
 export const useGhibliStore = defineStore('ghibli', {
   state: () => ({
     isProcessing: false,
@@ -21,10 +39,44 @@ export const useGhibliStore = defineStore('ghibli', {
       processingType: string
       processingTime: number
     }>,
-    availableProcessors: {} as Record<string, string>
+    availableProcessors: {} as Record<string, string>,
+    // 新增状态用于进度跟踪
+    currentTask: null as {
+      taskId: string
+      progress: number
+      status: string
+      message: string
+    } | null,
+    // 新增模型列表状态
+    availableModels: [] as string[],
+    modelsLoading: false
   }),
   
   actions: {
+    async loadAvailableModels() {
+      if (this.modelsLoading) return
+      
+      this.modelsLoading = true
+      try {
+        const response = await axios.get(`${API_BASE_URL}/api/comfyui-models`, {
+          timeout: 15000
+        })
+        
+        if (response.data.success) {
+          this.availableModels = response.data.models || []
+          console.log(`加载了 ${this.availableModels.length} 个可用模型`)
+        } else {
+          console.warn('获取模型列表失败:', response.data.message)
+          this.availableModels = []
+        }
+      } catch (error) {
+        console.error('获取模型列表失败:', error)
+        this.availableModels = []
+      } finally {
+        this.modelsLoading = false
+      }
+    },
+
     async loadAvailableProcessors() {
       try {
         const response = await axios.get(`${API_BASE_URL}/api/processors`)
@@ -48,6 +100,123 @@ export const useGhibliStore = defineStore('ghibli', {
       return this.processImage(file, 'upscale', { scale_factor: scaleFactor })
     },
     
+    async generateImageWithProgress(prompt: string, negativePrompt?: string, model?: string): Promise<string> {
+      this.isProcessing = true
+      this.currentTask = null
+      
+      try {
+        const formData = new FormData()
+        formData.append('prompt', prompt)
+        if (negativePrompt) {
+          formData.append('negative_prompt', negativePrompt)
+        }
+        if (model) {
+          formData.append('model', model)
+        }
+        
+        // 1. 启动异步任务
+        const response = await axios.post<AsyncTaskResponse>(
+          `${API_BASE_URL}/api/text-to-image-async`,
+          formData,
+          {
+            headers: {
+              'Content-Type': 'multipart/form-data'
+            },
+            timeout: 10000 // 启动任务只需要很短时间
+          }
+        )
+        
+        if (!response.data.success) {
+          throw new Error(response.data.message || '启动任务失败')
+        }
+        
+        const taskId = response.data.task_id
+        
+        // 2. 初始化任务状态
+        this.currentTask = {
+          taskId,
+          progress: 0,
+          status: 'pending',
+          message: '任务已创建...'
+        }
+        
+        // 3. 轮询进度
+        const result = await this.pollTaskProgress(taskId)
+        
+        // 4. 保存到历史记录
+        this.processingHistory.push({
+          original: '', // 文生图没有原图
+          result,
+          timestamp: Date.now(),
+          processingType: 'text_to_image',
+          processingTime: this.currentTask?.progress || 0
+        })
+        
+        return result
+        
+      } catch (error) {
+        if (axios.isAxiosError(error)) {
+          if (error.code === 'ECONNABORTED') {
+            throw new Error('请求超时，请重试')
+          } else if (error.response) {
+            throw new Error(error.response.data?.detail || '服务器错误')
+          } else if (error.request) {
+            throw new Error('无法连接到服务器，请检查网络连接')
+          }
+        }
+        throw new Error('生成图像时发生未知错误')
+      } finally {
+        this.isProcessing = false
+        this.currentTask = null
+      }
+    },
+
+    async pollTaskProgress(taskId: string): Promise<string> {
+      const maxPolls = 300 // 最多轮询5分钟 (300 * 1秒)
+      let polls = 0
+      
+      while (polls < maxPolls) {
+        try {
+          const response = await axios.get<ProgressResponse>(
+            `${API_BASE_URL}/api/progress/${taskId}`,
+            { timeout: 5000 }
+          )
+          
+          if (response.data.success) {
+            // 更新任务状态
+            if (this.currentTask && this.currentTask.taskId === taskId) {
+              this.currentTask.progress = response.data.progress
+              this.currentTask.status = response.data.status
+              this.currentTask.message = response.data.message
+            }
+            
+            // 检查任务状态
+            if (response.data.status === 'completed' && response.data.result_url) {
+              const fullImageUrl = `${API_BASE_URL}${response.data.result_url}`
+              return fullImageUrl
+            } else if (response.data.status === 'failed') {
+              throw new Error(response.data.error || '图像生成失败')
+            }
+          } else {
+            throw new Error(response.data.message || '查询进度失败')
+          }
+          
+        } catch (error) {
+          console.warn('轮询进度出错:', error)
+          // 继续轮询，除非是严重错误
+          if (axios.isAxiosError(error) && error.response?.status === 404) {
+            throw new Error('任务不存在或已过期')
+          }
+        }
+        
+        // 等待1秒后继续轮询
+        await new Promise(resolve => setTimeout(resolve, 1000))
+        polls++
+      }
+      
+      throw new Error('图像生成超时，请重试')
+    },
+
     async generateImage(prompt: string, negativePrompt?: string, model?: string): Promise<string> {
       this.isProcessing = true
       

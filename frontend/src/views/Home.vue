@@ -90,14 +90,28 @@
                 </div>
                 
                 <div class="input-group">
-                  <label for="model">模型名称 (可选)</label>
-                  <input 
+                  <label for="model">模型选择</label>
+                  <select 
                     id="model"
                     v-model="textToImageParams.model"
-                    type="text"
-                    placeholder="例如：epicphotogasm_ultimateFidelity.safetensors"
-                    class="input-field"
-                  />
+                    class="input-field select-field"
+                    :disabled="ghibliStore.modelsLoading"
+                  >
+                    <option value="">使用默认模型</option>
+                    <option 
+                      v-for="model in ghibliStore.availableModels" 
+                      :key="model" 
+                      :value="model"
+                    >
+                      {{ model }}
+                    </option>
+                  </select>
+                  <div v-if="ghibliStore.modelsLoading" class="loading-hint">
+                    正在加载模型列表...
+                  </div>
+                  <div v-if="!ghibliStore.modelsLoading && ghibliStore.availableModels.length === 0" class="warning-hint">
+                    无法获取模型列表，将使用默认模型
+                  </div>
                 </div>
                 
                 <button 
@@ -108,7 +122,19 @@
                   <span v-if="!processing">🎯 生成图像</span>
                   <span v-else class="loading-content">
                     <div class="loading"></div>
-                    正在生成...
+                    <div class="progress-info">
+                      <div v-if="ghibliStore.currentTask">
+                        <div class="progress-text">{{ ghibliStore.currentTask.message }}</div>
+                        <div class="progress-bar">
+                          <div 
+                            class="progress-fill" 
+                            :style="{ width: ghibliStore.currentTask.progress + '%' }"
+                          ></div>
+                        </div>
+                        <div class="progress-percent">{{ ghibliStore.currentTask.progress }}%</div>
+                      </div>
+                      <div v-else>正在生成...</div>
+                    </div>
                   </span>
                 </button>
               </div>
@@ -123,11 +149,19 @@
           <!-- Result Section -->
           <div v-if="originalImage || resultImage" class="result-section">
             <div class="section-header">
-              <h2>艺术转换</h2>
-              <p>见证您的照片华丽变身</p>
+              <h2>{{ selectedProcessing === 'text_to_image' ? '生成结果' : '艺术转换' }}</h2>
+              <p>{{ selectedProcessing === 'text_to_image' ? 'AI为您创造的精美图像' : '见证您的照片华丽变身' }}</p>
             </div>
             <div class="result-card">
+              <!-- 文生图只显示结果 -->
+              <div v-if="selectedProcessing === 'text_to_image' && resultImage" class="text-to-image-result">
+                <div class="generated-image">
+                  <img :src="resultImage" alt="Generated Image" />
+                </div>
+              </div>
+              <!-- 其他处理显示对比 -->
               <ImageComparison 
+                v-else
                 :original="originalImage" 
                 :result="resultImage" 
                 :loading="processing"
@@ -184,6 +218,8 @@ const textToImageParams = ref({
 onMounted(() => {
   // 加载可用的处理器
   ghibliStore.loadAvailableProcessors()
+  // 加载可用的模型列表
+  ghibliStore.loadAvailableModels()
 })
 
 const handleImageUpload = async (file: File) => {
@@ -218,7 +254,7 @@ const handleTextToImage = async () => {
     processing.value = true
     originalImage.value = '' // 文生图没有原图
     
-    const result = await ghibliStore.generateImage(
+    const result = await ghibliStore.generateImageWithProgress(
       textToImageParams.value.prompt,
       textToImageParams.value.negative_prompt || undefined,
       textToImageParams.value.model || undefined
@@ -449,6 +485,34 @@ const handleTextToImage = async () => {
   backdrop-filter: blur(10px);
 }
 
+.select-field {
+  cursor: pointer;
+  resize: none;
+}
+
+.select-field option {
+  background: rgba(40, 40, 60, 0.95);
+  color: white;
+  padding: 8px;
+}
+
+.loading-hint, .warning-hint {
+  font-size: 0.85rem;
+  margin-top: 4px;
+  padding: 4px 8px;
+  border-radius: 6px;
+}
+
+.loading-hint {
+  color: rgba(255, 255, 255, 0.7);
+  background: rgba(120, 119, 198, 0.1);
+}
+
+.warning-hint {
+  color: rgba(255, 200, 100, 0.9);
+  background: rgba(255, 200, 100, 0.1);
+}
+
 .input-field:focus {
   outline: none;
   border-color: rgba(120, 119, 198, 0.6);
@@ -480,6 +544,66 @@ const handleTextToImage = async () => {
   display: flex;
   align-items: center;
   gap: 12px;
+}
+
+.progress-info {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 200px;
+}
+
+.progress-text {
+  font-size: 0.9rem;
+  color: rgba(255, 255, 255, 0.9);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.progress-bar {
+  width: 100%;
+  height: 6px;
+  background: rgba(255, 255, 255, 0.2);
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.progress-fill {
+  height: 100%;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  border-radius: 3px;
+  transition: width 0.3s ease;
+}
+
+.progress-percent {
+  font-size: 0.8rem;
+  color: rgba(255, 255, 255, 0.8);
+  text-align: center;
+}
+
+/* Text to Image Result */
+.text-to-image-result {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  padding: 20px;
+}
+
+.generated-image {
+  max-width: 100%;
+  border-radius: 20px;
+  overflow: hidden;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+}
+
+.generated-image img {
+  width: 100%;
+  height: auto;
+  display: block;
+  max-width: 512px;
+  max-height: 512px;
+  object-fit: contain;
 }
 
 /* Features Section */

@@ -20,7 +20,7 @@ class ImageProcessor(ABC):
     """
     
     @abstractmethod
-    def process(self, image: Image.Image, parameters: Dict[str, Any] = None) -> Image.Image:
+    def process(self, image: Image.Image, parameters: Dict[str, Any] = None, task_id: str = None) -> Image.Image:
         """
         处理图像的抽象方法
         
@@ -53,7 +53,7 @@ class ImageProcessor(ABC):
 class GrayscaleProcessor(ImageProcessor):
     """灰度转换处理器"""
     
-    def process(self, image: Image.Image, parameters: Dict[str, Any] = None) -> Image.Image:
+    def process(self, image: Image.Image, parameters: Dict[str, Any] = None, task_id: str = None) -> Image.Image:
         """将图像转换为灰度"""
         # 转换为OpenCV格式
         cv_image = cv2.cvtColor(np.array(image), cv2.COLOR_RGB2BGR)
@@ -73,7 +73,7 @@ class GrayscaleProcessor(ImageProcessor):
 class GhibliStyleProcessor(ImageProcessor):
     """吉卜力风格处理器 (模拟实现)"""
     
-    def process(self, image: Image.Image, parameters: Dict[str, Any] = None) -> Image.Image:
+    def process(self, image: Image.Image, parameters: Dict[str, Any] = None, task_id: str = None) -> Image.Image:
         """
         模拟吉卜力风格转换
         实际项目中这里会调用真实的AI API
@@ -109,7 +109,7 @@ class UpscaleProcessor(ImageProcessor):
     这是一个外部API调用的示例，展示如何集成第三方AI服务
     """
     
-    def process(self, image: Image.Image, parameters: Dict[str, Any] = None) -> Image.Image:
+    def process(self, image: Image.Image, parameters: Dict[str, Any] = None, task_id: str = None) -> Image.Image:
         """
         使用外部API进行图片超分放大
         
@@ -262,7 +262,7 @@ class TextToImageProcessor(ImageProcessor):
     这个处理器不需要输入图像，而是基于文字描述生成图像
     """
     
-    def process(self, image: Image.Image = None, parameters: Dict[str, Any] = None) -> Image.Image:
+    def process(self, image: Image.Image = None, parameters: Dict[str, Any] = None, task_id: str = None) -> Image.Image:
         """
         使用 ComfyUI 进行文生图
         
@@ -301,7 +301,8 @@ class TextToImageProcessor(ImageProcessor):
                 width=width,
                 height=height,
                 steps=steps,
-                cfg=cfg
+                cfg=cfg,
+                task_id=task_id
             )
             
             # 将图像数据转换为 PIL Image
@@ -313,7 +314,8 @@ class TextToImageProcessor(ImageProcessor):
             return self._fallback_generate_placeholder(prompt, width, height)
     
     def _call_comfyui_api(self, prompt: str, negative_prompt: str, model: str = None, 
-                         width: int = 512, height: int = 512, steps: int = 20, cfg: int = 8) -> bytes:
+                         width: int = 512, height: int = 512, steps: int = 20, cfg: int = 8, 
+                         task_id: str = None) -> bytes:
         """
         调用 ComfyUI API 生成图像
         
@@ -351,7 +353,7 @@ class TextToImageProcessor(ImageProcessor):
         print(f"ComfyUI 任务ID: {prompt_id}")
         
         # 4. 等待完成
-        history = self._wait_for_completion(server_address, prompt_id)
+        history = self._wait_for_completion(server_address, prompt_id, task_id)
         
         # 5. 获取生成的图像
         for node_id in history['outputs']:
@@ -480,18 +482,62 @@ class TextToImageProcessor(ImageProcessor):
         
         return workflow
     
-    def _wait_for_completion(self, server_address: str, prompt_id: str) -> Dict:
+    def _wait_for_completion(self, server_address: str, prompt_id: str, task_id: str = None) -> Dict:
         """等待图像生成完成"""
         print("正在等待 ComfyUI 生成图像...")
         max_wait_time = settings.comfyui_timeout
         start_time = time.time()
         
+        # 导入task_progress（需要在循环外访问）
+        from app.routers.image_processing import task_progress
+        
+        progress_step = 0
         while time.time() - start_time < max_wait_time:
             try:
+                # 查询队列状态
+                queue_response = requests.get(f"http://{server_address}/queue", timeout=5)
+                queue_data = queue_response.json()
+                
+                # 查询历史状态
                 response = requests.get(f"http://{server_address}/history/{prompt_id}")
                 history = response.json()
+                
                 if prompt_id in history:
+                    # 任务完成
+                    if task_id and task_id in task_progress:
+                        task_progress[task_id].update({
+                            "progress": 80,
+                            "message": "图像生成完成，正在下载..."
+                        })
                     return history[prompt_id]
+                
+                # 更新进度
+                if task_id and task_id in task_progress:
+                    # 检查任务在队列中的状态
+                    running_queue = queue_data.get('queue_running', [])
+                    pending_queue = queue_data.get('queue_pending', [])
+                    
+                    is_running = any(len(item) >= 2 and item[1] == prompt_id for item in running_queue)
+                    
+                    if is_running:
+                        # 任务正在执行，递增进度
+                        progress_step = min(progress_step + 2, 70)
+                        task_progress[task_id].update({
+                            "progress": 30 + progress_step,
+                            "message": f"正在生成图像... ({progress_step}/70%)"
+                        })
+                    else:
+                        # 检查是否在等待队列中
+                        for i, item in enumerate(pending_queue):
+                            if len(item) >= 2 and item[1] == prompt_id:
+                                position = i + 1
+                                total = len(pending_queue)
+                                task_progress[task_id].update({
+                                    "progress": 25,
+                                    "message": f"排队中... ({position}/{total})"
+                                })
+                                break
+                
             except Exception as e:
                 print(f"检查任务状态时出错: {e}")
             
@@ -615,7 +661,8 @@ class ImageProcessingService:
         self, 
         image_data: bytes, 
         processing_type: str, 
-        parameters: Dict[str, Any] = None
+        parameters: Dict[str, Any] = None,
+        task_id: str = None
     ) -> Tuple[bytes, float]:
         """
         处理图像
@@ -647,7 +694,7 @@ class ImageProcessingService:
             image = image.convert('RGB')
         
         # 处理图像
-        processed_image = processor.process(image, parameters or {})
+        processed_image = processor.process(image, parameters or {}, task_id)
         
         # 保存处理后的图像
         output_buffer = io.BytesIO()

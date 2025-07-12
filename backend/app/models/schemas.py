@@ -21,6 +21,22 @@ class ImageProcessResponse(BaseModel):
     processing_type: str
     processing_time: float
 
+class TextToImageAsyncResponse(BaseModel):
+    success: bool
+    message: str
+    task_id: str
+    prompt_id: Optional[str] = None
+    estimated_time: Optional[int] = None
+
+class ProgressResponse(BaseModel):
+    success: bool
+    task_id: str
+    status: str  # 'pending', 'running', 'completed', 'failed'
+    progress: int  # 0-100
+    message: str
+    result_url: Optional[str] = None
+    error: Optional[str] = None
+
 class ErrorResponse(BaseModel):
     success: bool = False
     message: str
