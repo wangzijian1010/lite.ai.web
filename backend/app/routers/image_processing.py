@@ -128,6 +128,7 @@ async def get_comfyui_progress(prompt_id: str):
             "message": f"查询进度失败: {str(e)}"
         }
 
+@router.get("/processors")
 async def get_available_processors():
     """
     获取所有可用的图像处理器
@@ -197,6 +198,134 @@ async def get_comfyui_models():
             "models": [],
             "message": f"获取模型列表失败: {str(e)}"
         }
+
+@router.post("/process-async", response_model=TextToImageAsyncResponse)
+async def process_image_async(
+    file: UploadFile = File(..., description="要处理的图像文件"),
+    processing_type: str = Form(..., description="处理类型"),
+    parameters: Optional[str] = Form(None, description="处理参数 (JSON格式)")
+):
+    """
+    异步处理图像的端点（支持ComfyUI进度跟踪）
+    适用于创意放大等耗时较长的ComfyUI处理
+    """
+    import uuid
+    import asyncio
+    from concurrent.futures import ThreadPoolExecutor
+    
+    try:
+        # 验证文件
+        if not validate_image_file(file):
+            raise HTTPException(
+                status_code=400, 
+                detail="无效的图像文件或文件过大"
+            )
+        
+        # 解析参数
+        process_parameters = {}
+        if parameters:
+            try:
+                process_parameters = json.loads(parameters)
+            except json.JSONDecodeError:
+                raise HTTPException(
+                    status_code=400,
+                    detail="参数格式错误，应为有效的JSON字符串"
+                )
+        
+        # 生成任务ID
+        task_id = str(uuid.uuid4())
+        
+        # 初始化任务状态
+        task_progress[task_id] = {
+            "status": "pending",
+            "progress": 0,
+            "message": "任务已创建，准备开始处理...",
+            "started_at": time.time()
+        }
+        
+        # 读取文件内容
+        file_content = await file.read()
+        
+        # 异步启动处理任务
+        asyncio.create_task(process_image_async_task(task_id, file_content, processing_type, process_parameters, file.filename))
+        
+        return TextToImageAsyncResponse(
+            success=True,
+            message="任务已创建，正在处理中",
+            task_id=task_id,
+            estimated_time=90  # 创意放大估计90秒完成
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"创建任务失败: {str(e)}"
+        )
+
+async def process_image_async_task(task_id: str, file_content: bytes, processing_type: str, parameters: dict, filename: str):
+    """异步处理图像任务"""
+    try:
+        # 更新状态为开始处理
+        task_progress[task_id].update({
+            "status": "running",
+            "progress": 10,
+            "message": "正在准备处理参数..."
+        })
+        
+        # 调用处理服务
+        def run_processing():
+            return image_processing_service.process_image(
+                file_content, 
+                processing_type, 
+                parameters,
+                task_id=task_id  # 传递task_id用于进度更新
+            )
+        
+        # 在线程池中运行同步处理函数
+        import asyncio
+        from concurrent.futures import ThreadPoolExecutor
+        
+        loop = asyncio.get_event_loop()
+        with ThreadPoolExecutor() as executor:
+            processed_data, processing_time = await loop.run_in_executor(
+                executor, run_processing
+            )
+        
+        # 保存处理后的图像
+        task_progress[task_id].update({
+            "progress": 90,
+            "message": "正在保存图像..."
+        })
+        
+        processed_file_path = save_processed_image(
+            processed_data, 
+            filename or "processed_image"
+        )
+        
+        # 生成访问URL
+        processed_image_url = get_file_url(processed_file_path)
+        
+        # 任务完成
+        task_progress[task_id].update({
+            "status": "completed",
+            "progress": 100,
+            "message": "图像处理完成",
+            "result_url": processed_image_url,
+            "completed_at": time.time(),
+            "processing_time": processing_time
+        })
+        
+    except Exception as e:
+        # 任务失败
+        task_progress[task_id].update({
+            "status": "failed",
+            "progress": 0,
+            "message": "图像处理失败",
+            "error": str(e),
+            "completed_at": time.time()
+        })
 
 @router.post("/process", response_model=ImageProcessResponse)
 async def process_image(

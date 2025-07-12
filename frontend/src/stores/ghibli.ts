@@ -99,6 +99,76 @@ export const useGhibliStore = defineStore('ghibli', {
     async upscaleImage(file: File, scaleFactor: number = 2): Promise<string> {
       return this.processImage(file, 'upscale', { scale_factor: scaleFactor })
     },
+
+    async creativeUpscaleImage(file: File): Promise<string> {
+      return this.processImage(file, 'creative_upscale')
+    },
+
+    async creativeUpscaleImageWithProgress(file: File): Promise<string> {
+      this.isProcessing = true
+      this.currentTask = null
+      
+      try {
+        const formData = new FormData()
+        formData.append('file', file)
+        formData.append('processing_type', 'creative_upscale')
+        
+        // 1. 启动异步任务
+        const response = await axios.post<AsyncTaskResponse>(
+          `${API_BASE_URL}/api/process-async`,
+          formData,
+          {
+            headers: {
+              'Content-Type': 'multipart/form-data'
+            },
+            timeout: 10000 // 启动任务只需要很短时间
+          }
+        )
+        
+        if (!response.data.success) {
+          throw new Error(response.data.message || '启动任务失败')
+        }
+        
+        const taskId = response.data.task_id
+        
+        // 2. 初始化任务状态
+        this.currentTask = {
+          taskId,
+          progress: 0,
+          status: 'pending',
+          message: '任务已创建...'
+        }
+        
+        // 3. 轮询进度
+        const result = await this.pollTaskProgress(taskId)
+        
+        // 4. 保存到历史记录
+        this.processingHistory.push({
+          original: URL.createObjectURL(file),
+          result,
+          timestamp: Date.now(),
+          processingType: 'creative_upscale',
+          processingTime: this.currentTask?.progress || 0
+        })
+        
+        return result
+        
+      } catch (error) {
+        if (axios.isAxiosError(error)) {
+          if (error.code === 'ECONNABORTED') {
+            throw new Error('请求超时，请重试')
+          } else if (error.response) {
+            throw new Error(error.response.data?.detail || '服务器错误')
+          } else if (error.request) {
+            throw new Error('无法连接到服务器，请检查网络连接')
+          }
+        }
+        throw new Error('处理图像时发生未知错误')
+      } finally {
+        this.isProcessing = false
+        this.currentTask = null
+      }
+    },
     
     async generateImageWithProgress(prompt: string, negativePrompt?: string, model?: string): Promise<string> {
       this.isProcessing = true

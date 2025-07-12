@@ -15,7 +15,10 @@ class Settings(BaseSettings):
     
     # ComfyUI 配置
     comfyui_server_address: str = "127.0.0.1:8188"
-    comfyui_workflow_json: str = "AI_Image_API.json"
+    comfyui_workflow_json: str = "workflow/text_to_image_workflow.json"  # 保留兼容性
+    comfyui_text_to_image_workflow: str = "workflow/text_to_image_workflow.json"
+    comfyui_upscale_workflow: str = "workflow/upscale_workflow.json"
+    comfyui_input_dir: str = "./comfyui_temp"  # ComfyUI输入文件目录
     comfyui_timeout: int = 120
     
     @property

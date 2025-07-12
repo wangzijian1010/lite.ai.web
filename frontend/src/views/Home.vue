@@ -51,10 +51,10 @@
                     ⚫ 灰度转换
                   </button>
                   <button 
-                    @click="selectedProcessing = 'upscale'"
-                    :class="['processing-btn', { active: selectedProcessing === 'upscale' }]"
+                    @click="selectedProcessing = 'creative_upscale'"
+                    :class="['processing-btn', { active: selectedProcessing === 'creative_upscale' }]"
                   >
-                    🔍 AI超分放大
+                    ✨ 创意放大修复
                   </button>
                   <button 
                     @click="selectedProcessing = 'text_to_image'"
@@ -141,7 +141,21 @@
               
               <!-- 图片上传 (非文生图功能) -->
               <div v-else>
-                <ImageUpload @upload="handleImageUpload" :loading="processing" />
+                <!-- 创意放大功能显示进度 -->
+                <div v-if="selectedProcessing === 'creative_upscale' && processing && ghibliStore.currentTask" class="upload-progress">
+                  <div class="progress-container">
+                    <div class="progress-text">{{ ghibliStore.currentTask.message }}</div>
+                    <div class="progress-bar">
+                      <div 
+                        class="progress-fill" 
+                        :style="{ width: ghibliStore.currentTask.progress + '%' }"
+                      ></div>
+                    </div>
+                    <div class="progress-percent">{{ ghibliStore.currentTask.progress }}%</div>
+                  </div>
+                </div>
+                <!-- 普通上传组件 -->
+                <ImageUpload v-else @upload="handleImageUpload" :loading="processing" />
               </div>
             </div>
           </div>
@@ -208,7 +222,7 @@ const ghibliStore = useGhibliStore()
 const originalImage = ref<string>('')
 const resultImage = ref<string>('')
 const processing = ref(false)
-const selectedProcessing = ref<'ghibli_style' | 'grayscale' | 'upscale' | 'text_to_image'>('ghibli_style')
+const selectedProcessing = ref<'ghibli_style' | 'grayscale' | 'text_to_image' | 'creative_upscale'>('ghibli_style')
 const textToImageParams = ref({
   prompt: '',
   negative_prompt: 'text, watermark, blurry, low quality',
@@ -233,8 +247,8 @@ const handleImageUpload = async (file: File) => {
       result = await ghibliStore.convertToGhibliStyle(file)
     } else if (selectedProcessing.value === 'grayscale') {
       result = await ghibliStore.convertToGrayscale(file)
-    } else if (selectedProcessing.value === 'upscale') {
-      result = await ghibliStore.upscaleImage(file, 2) // 默认2倍放大
+    } else if (selectedProcessing.value === 'creative_upscale') {
+      result = await ghibliStore.creativeUpscaleImageWithProgress(file)
     } else {
       throw new Error('未知的处理类型')
     }
@@ -580,6 +594,50 @@ const handleTextToImage = async () => {
   font-size: 0.8rem;
   color: rgba(255, 255, 255, 0.8);
   text-align: center;
+}
+
+/* Upload Progress */
+.upload-progress {
+  min-height: 280px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 40px;
+}
+
+.progress-container {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  min-width: 300px;
+  text-align: center;
+}
+
+.progress-container .progress-text {
+  font-size: 1.1rem;
+  color: rgba(255, 255, 255, 0.9);
+  font-weight: 500;
+}
+
+.progress-container .progress-bar {
+  width: 100%;
+  height: 12px;
+  background: rgba(255, 255, 255, 0.2);
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.progress-container .progress-fill {
+  height: 100%;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  border-radius: 6px;
+  transition: width 0.3s ease;
+}
+
+.progress-container .progress-percent {
+  font-size: 1rem;
+  color: rgba(255, 255, 255, 0.8);
+  font-weight: 600;
 }
 
 /* Text to Image Result */

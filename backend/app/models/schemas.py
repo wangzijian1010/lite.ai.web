@@ -7,6 +7,7 @@ class ProcessingType(str, Enum):
     GHIBLI_STYLE = "ghibli_style"
     UPSCALE = "upscale"
     TEXT_TO_IMAGE = "text_to_image"
+    CREATIVE_UPSCALE = "creative_upscale"
     BLUR = "blur"
     EDGE_DETECTION = "edge_detection"
 
