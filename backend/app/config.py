@@ -3,10 +3,26 @@ from typing import List
 
 class Settings(BaseSettings):
     database_url: str = "sqlite:///./app.db"
-    secret_key: str = "your-secret-key-here"
+    secret_key: str = "your-secret-key-here-change-in-production"
+    algorithm: str = "HS256"
+    access_token_expire_minutes: int = 30
     upload_dir: str = "./uploads"
     max_file_size: int = 10 * 1024 * 1024  # 10MB
     allowed_extensions: str = "jpg,jpeg,png,webp"
+    
+    # 邮箱配置
+    smtp_host: str = "smtp.qq.com"  # QQ邮箱SMTP服务器
+    smtp_port: int = 587
+    smtp_username: str = ""  # 发送邮箱地址
+    smtp_password: str = ""  # 邮箱授权码
+    smtp_from_email: str = ""  # 发件人邮箱（通常与smtp_username相同）
+    smtp_from_name: str = "吉卜力AI"
+    
+    # 验证码配置
+    verification_code_expire_minutes: int = 5  # 验证码5分钟过期
+    verification_code_length: int = 6  # 6位验证码
+    max_verification_attempts: int = 3  # 最大验证次数
+    email_send_cooldown_seconds: int = 60  # 邮箱发送冷却时间（防刷）
     
     # 超分 API 配置
     upscale_api_url: str = "https://api.example.com/upscale"
