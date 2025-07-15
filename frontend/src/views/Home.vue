@@ -10,6 +10,26 @@
           <p class="hero-subtitle">
             用 AI 的魔法，将普通照片转换为充满想象力的吉卜力工作室风格艺术作品
           </p>
+          
+          <!-- 用户认证区域 -->
+          <div class="auth-section">
+            <div v-if="authStore.isAuthenticated" class="user-info">
+              <div class="user-welcome">
+                欢迎，{{ authStore.user?.username }}！
+              </div>
+              <button @click="handleLogout" class="auth-btn logout-btn">
+                退出登录
+              </button>
+            </div>
+            <div v-else class="auth-buttons">
+              <button @click="showAuthModal('login')" class="auth-btn login-btn">
+                登录
+              </button>
+              <button @click="showAuthModal('register')" class="auth-btn register-btn">
+                注册
+              </button>
+            </div>
+          </div>
         </div>
         
         <div class="hero-visual">
@@ -208,6 +228,14 @@
         </div>
       </div>
     </section>
+    
+    <!-- 认证模态框 -->
+    <AuthModal
+      :show-modal="authModalVisible"
+      :mode="authMode"
+      @close="authModalVisible = false"
+      @success="handleAuthSuccess"
+    />
   </div>
 </template>
 
@@ -215,10 +243,18 @@
 import { ref, onMounted } from 'vue'
 import ImageUpload from '@/components/ImageUpload.vue'
 import ImageComparison from '@/components/ImageComparison.vue'
+import AuthModal from '@/components/AuthModal.vue'
 import { useGhibliStore } from '@/stores/ghibli'
+import { useAuthStore } from '@/stores/auth'
 
 const ghibliStore = useGhibliStore()
+const authStore = useAuthStore()
 
+// 认证相关
+const authModalVisible = ref(false)
+const authMode = ref<'login' | 'register'>('login')
+
+// 其他现有变量
 const originalImage = ref<string>('')
 const resultImage = ref<string>('')
 const processing = ref(false)
@@ -228,6 +264,21 @@ const textToImageParams = ref({
   negative_prompt: 'text, watermark, blurry, low quality',
   model: ''
 })
+
+// 认证相关方法
+const showAuthModal = (mode: 'login' | 'register') => {
+  authMode.value = mode
+  authModalVisible.value = true
+}
+
+const handleLogout = () => {
+  authStore.logout()
+}
+
+const handleAuthSuccess = () => {
+  // 认证成功后的处理
+  console.log('认证成功')
+}
 
 onMounted(() => {
   // 加载可用的处理器
@@ -720,6 +771,89 @@ const handleTextToImage = async () => {
   
   .element {
     font-size: 2rem;
+  }
+}
+
+/* 认证相关样式 */
+.auth-section {
+  margin-top: 32px;
+}
+
+.user-info {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  align-items: flex-start;
+}
+
+.user-welcome {
+  color: white;
+  font-size: 1.1rem;
+  font-weight: 500;
+  padding: 12px 20px;
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 12px;
+  backdrop-filter: blur(10px);
+}
+
+.auth-buttons {
+  display: flex;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.auth-btn {
+  padding: 12px 24px;
+  border: 2px solid rgba(255, 255, 255, 0.3);
+  border-radius: 50px;
+  background: rgba(255, 255, 255, 0.05);
+  color: white;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  font-size: 1rem;
+  font-weight: 500;
+  backdrop-filter: blur(10px);
+}
+
+.login-btn:hover {
+  border-color: rgba(120, 119, 198, 0.6);
+  background: rgba(120, 119, 198, 0.2);
+  transform: translateY(-2px);
+}
+
+.register-btn {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  border-color: transparent;
+}
+
+.register-btn:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 25px rgba(102, 126, 234, 0.3);
+}
+
+.logout-btn {
+  border-color: rgba(255, 107, 107, 0.5);
+  color: rgba(255, 107, 107, 0.9);
+}
+
+.logout-btn:hover {
+  border-color: rgba(255, 107, 107, 0.8);
+  background: rgba(255, 107, 107, 0.1);
+  transform: translateY(-2px);
+}
+
+@media (max-width: 768px) {
+  .auth-section {
+    margin-top: 24px;
+  }
+  
+  .auth-buttons {
+    gap: 12px;
+  }
+  
+  .auth-btn {
+    padding: 10px 20px;
+    font-size: 0.9rem;
   }
 }
 </style>
