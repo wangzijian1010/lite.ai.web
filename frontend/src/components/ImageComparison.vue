@@ -44,6 +44,9 @@
 </template>
 
 <script setup lang="ts">
+import { useAuthStore } from '@/stores/auth'
+import axios from 'axios'
+
 interface Props {
   original?: string
   result?: string
@@ -56,15 +59,55 @@ const props = withDefaults(defineProps<Props>(), {
   loading: false
 })
 
-const downloadImage = () => {
+const authStore = useAuthStore()
+
+const downloadImage = async () => {
   if (!props.result) return
   
-  const link = document.createElement('a')
-  link.href = props.result
-  link.download = `ghibli-style-${Date.now()}.png`
-  document.body.appendChild(link)
-  link.click()
-  document.body.removeChild(link)
+  try {
+    // 检查用户是否登录
+    if (!authStore.isAuthenticated) {
+      alert('请先登录后再下载图片')
+      return
+    }
+
+    // 从result URL中提取文件名
+    const url = new URL(props.result)
+    const filename = url.pathname.split('/').pop()
+    
+    if (!filename) {
+      alert('无法获取文件名')
+      return
+    }
+
+    // 调用后端的下载接口（这会扣除积分）
+    const response = await axios.get(`http://localhost:8000/api/files/${filename}`, {
+      responseType: 'blob',
+      headers: {
+        'Authorization': `Bearer ${authStore.token}`
+      }
+    })
+
+    // 创建下载链接
+    const blob = new Blob([response.data])
+    const downloadUrl = window.URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = downloadUrl
+    link.download = filename
+    document.body.appendChild(link)
+    link.click()
+    document.body.removeChild(link)
+    window.URL.revokeObjectURL(downloadUrl)
+
+    // 刷新用户信息以更新积分显示
+    await authStore.fetchUserInfo()
+    
+    alert('下载成功！已扣除10积分')
+  } catch (error: any) {
+    console.error('下载失败:', error)
+    const errorMessage = error.response?.data?.detail || error.message || '下载失败，请重试'
+    alert(errorMessage)
+  }
 }
 
 const shareImage = async () => {

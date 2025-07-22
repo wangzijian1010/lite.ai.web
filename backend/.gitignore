@@ -3,6 +3,7 @@
 .env.local
 .env.development
 .env.production
+*.pyc
 
 # Python
 __pycache__/
@@ -53,3 +54,5 @@ logs/
 # Uploads (if you have file uploads)
 uploads/
 temp/
+app/__pycache__
+app/models/__pycache__

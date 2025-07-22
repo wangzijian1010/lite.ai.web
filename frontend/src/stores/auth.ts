@@ -9,6 +9,8 @@ export interface User {
   username: string
   email: string
   is_active: boolean
+  email_verified: boolean
+  credits: number
   created_at: string
 }
 
@@ -115,6 +117,24 @@ export const useAuthStore = defineStore('auth', () => {
     }
   }
 
+  const getCredits = async () => {
+    try {
+      const response = await axios.get(`${API_BASE_URL}/credits`)
+      return response.data
+    } catch (error) {
+      throw error
+    }
+  }
+
+  const checkCredits = async (cost: number = 10) => {
+    try {
+      const response = await axios.post(`${API_BASE_URL}/credits/check`, { cost })
+      return response.data
+    } catch (error) {
+      throw error
+    }
+  }
+
   // 初始化时如果有token，尝试获取用户信息
   if (token.value) {
     fetchUserInfo().catch(() => {
@@ -131,6 +151,8 @@ export const useAuthStore = defineStore('auth', () => {
     verifyCode,
     login,
     logout,
-    fetchUserInfo
+    fetchUserInfo,
+    getCredits,
+    checkCredits
   }
 })

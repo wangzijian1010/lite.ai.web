@@ -1,5 +1,6 @@
-from fastapi import APIRouter, UploadFile, File, HTTPException, Form
+from fastapi import APIRouter, UploadFile, File, HTTPException, Form, Depends
 from fastapi.responses import FileResponse
+from sqlalchemy.orm import Session
 from typing import Optional
 import os
 import json
@@ -8,7 +9,11 @@ from PIL import Image
 import requests
 import time
 
-from app.models.schemas import ImageProcessResponse, ErrorResponse, TextToImageAsyncResponse, ProgressResponse
+from app.models.schemas import ImageProcessResponse, ErrorResponse, TextToImageAsyncResponse, ProgressResponse, CreditResponse
+from app.models.models import User
+from app.database import get_db
+from app.routers.auth import get_current_user
+from app.utils.credits import check_user_credits, deduct_user_credits
 from app.services.image_processing import image_processing_service
 from app.utils.file_utils import (
     validate_image_file, 
@@ -203,10 +208,11 @@ async def get_comfyui_models():
 async def process_image_async(
     file: UploadFile = File(..., description="要处理的图像文件"),
     processing_type: str = Form(..., description="处理类型"),
-    parameters: Optional[str] = Form(None, description="处理参数 (JSON格式)")
+    parameters: Optional[str] = Form(None, description="处理参数 (JSON格式)"),
+    current_user: User = Depends(get_current_user)
 ):
     """
-    异步处理图像的端点（支持ComfyUI进度跟踪）
+    异步处理图像的端点（支持ComfyUI进度跟踪，需要登录）
     适用于创意放大等耗时较长的ComfyUI处理
     """
     import uuid
@@ -214,6 +220,14 @@ async def process_image_async(
     from concurrent.futures import ThreadPoolExecutor
     
     try:
+        # 检查积分是否足够
+        required_credits = 10
+        if not check_user_credits(current_user, required_credits):
+            raise HTTPException(
+                status_code=400, 
+                detail=f"积分不足，当前积分：{current_user.credits}，需要积分：{required_credits}。请充值后再试。"
+            )
+        
         # 验证文件
         if not validate_image_file(file):
             raise HTTPException(
@@ -331,25 +345,36 @@ async def process_image_async_task(task_id: str, file_content: bytes, processing
 async def process_image(
     file: UploadFile = File(..., description="要处理的图像文件"),
     processing_type: str = Form(..., description="处理类型"),
-    parameters: Optional[str] = Form(None, description="处理参数 (JSON格式)")
+    parameters: Optional[str] = Form(None, description="处理参数 (JSON格式)"),
+    current_user: User = Depends(get_current_user)
 ):
     """
-    处理图像的主要端点
+    处理图像的主要端点（需要登录）
     
     Args:
         file: 上传的图像文件
         processing_type: 处理类型 (grayscale, ghibli_style 等)
         parameters: 可选的处理参数，JSON字符串格式
+        current_user: 当前登录用户
     
     Returns:
         ImageProcessResponse: 处理结果
     
     Example:
         curl -X POST "http://localhost:8000/api/process" \
+             -H "Authorization: Bearer <token>" \
              -F "file=@image.jpg" \
              -F "processing_type=grayscale"
     """
     try:
+        # 检查积分是否足够（处理时不扣除，下载时才扣除）
+        required_credits = 10
+        if not check_user_credits(current_user, required_credits):
+            raise HTTPException(
+                status_code=400, 
+                detail=f"积分不足，当前积分：{current_user.credits}，需要积分：{required_credits}。请充值后再试。"
+            )
+        
         # 验证文件
         if not validate_image_file(file):
             raise HTTPException(
@@ -412,40 +437,64 @@ async def process_image(
         )
 
 @router.get("/files/{filename}")
-async def get_file(filename: str):
+async def get_file(
+    filename: str, 
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
     """
-    获取处理后的文件
+    获取处理后的文件并扣除积分
     
     Args:
         filename: 文件名
+        current_user: 当前登录用户
+        db: 数据库会话
         
     Returns:
         FileResponse: 文件响应
     """
+    # 检查积分是否足够
+    required_credits = 10
+    if not check_user_credits(current_user, required_credits):
+        raise HTTPException(
+            status_code=400, 
+            detail=f"积分不足，当前积分：{current_user.credits}，需要积分：{required_credits}"
+        )
+    
     file_path = os.path.join(settings.upload_dir, filename)
     
     if not os.path.exists(file_path):
         raise HTTPException(status_code=404, detail="文件不存在")
     
+    # 扣除积分
+    success = deduct_user_credits(db, current_user, required_credits)
+    if not success:
+        raise HTTPException(
+            status_code=400,
+            detail="积分扣除失败"
+        )
+
     return FileResponse(
         file_path,
         media_type="image/png",
-        headers={"Content-Disposition": f"inline; filename={filename}"}
+        headers={"Content-Disposition": f"attachment; filename={filename}"}
     )
 
 @router.post("/convert-to-ghibli")
 async def convert_to_ghibli_style(
-    file: UploadFile = File(..., description="要转换的图像文件")
+    file: UploadFile = File(..., description="要转换的图像文件"),
+    current_user: User = Depends(get_current_user)
 ):
     """
-    专门的吉卜力风格转换端点
+    专门的吉卜力风格转换端点（需要登录）
     
     这是为了兼容现有前端代码而创建的便捷端点
     """
     return await process_image(
         file=file, 
         processing_type="ghibli_style", 
-        parameters=None
+        parameters=None,
+        current_user=current_user
     )
 
 @router.post("/text-to-image-async", response_model=TextToImageAsyncResponse)
@@ -456,10 +505,11 @@ async def text_to_image_async(
     width: int = Form(512, description="图片宽度"),
     height: int = Form(512, description="图片高度"),
     steps: int = Form(20, description="采样步数"),
-    cfg: float = Form(8.0, description="CFG值")
+    cfg: float = Form(8.0, description="CFG值"),
+    current_user: User = Depends(get_current_user)
 ):
     """
-    ComfyUI 异步文生图端点
+    ComfyUI 异步文生图端点（需要登录）
     返回任务ID，可通过进度查询接口获取实时进度
     """
     import uuid
@@ -467,6 +517,14 @@ async def text_to_image_async(
     from concurrent.futures import ThreadPoolExecutor
     
     try:
+        # 检查积分是否足够
+        required_credits = 10
+        if not check_user_credits(current_user, required_credits):
+            raise HTTPException(
+                status_code=400, 
+                detail=f"积分不足，当前积分：{current_user.credits}，需要积分：{required_credits}。请充值后再试。"
+            )
+        
         # 生成任务ID
         task_id = str(uuid.uuid4())
         
@@ -600,10 +658,11 @@ async def text_to_image(
     width: int = Form(512, description="图片宽度"),
     height: int = Form(512, description="图片高度"),
     steps: int = Form(20, description="采样步数"),
-    cfg: float = Form(8.0, description="CFG值")
+    cfg: float = Form(8.0, description="CFG值"),
+    current_user: User = Depends(get_current_user)
 ):
     """
-    ComfyUI 文生图端点
+    ComfyUI 文生图端点（需要登录）
     
     Args:
         prompt: 正向提示词 (必填)
@@ -613,17 +672,27 @@ async def text_to_image(
         height: 图片高度 (默认: 512)
         steps: 采样步数 (默认: 20)
         cfg: CFG值 (默认: 8.0)
+        current_user: 当前登录用户
     
     Returns:
         ImageProcessResponse: 生成结果
     
     Example:
         curl -X POST "http://localhost:8000/api/text-to-image" \
+             -H "Authorization: Bearer <token>" \
              -F "prompt=a beautiful landscape" \
              -F "negative_prompt=blurry, low quality" \
              -F "model=epicphotogasm_ultimateFidelity.safetensors"
     """
     try:
+        # 检查积分是否足够
+        required_credits = 10
+        if not check_user_credits(current_user, required_credits):
+            raise HTTPException(
+                status_code=400, 
+                detail=f"积分不足，当前积分：{current_user.credits}，需要积分：{required_credits}。请充值后再试。"
+            )
+        
         # 准备参数
         parameters = {
             "prompt": prompt,

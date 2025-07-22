@@ -61,6 +61,7 @@ class UserResponse(BaseModel):
     email: str
     is_active: bool
     email_verified: bool
+    credits: int  # 用户积分
     created_at: datetime
 
     class Config:
@@ -85,3 +86,12 @@ class SendVerificationCodeResponse(BaseModel):
     success: bool
     message: str
     cooldown_seconds: Optional[int] = None
+
+# 积分相关模型
+class CreditResponse(BaseModel):
+    success: bool
+    message: str
+    current_credits: int
+
+class CreditDeductionRequest(BaseModel):
+    cost: int = 10  # 默认每次操作消耗10积分

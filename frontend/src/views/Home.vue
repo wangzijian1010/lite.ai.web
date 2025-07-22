@@ -17,6 +17,9 @@
               <div class="user-welcome">
                 欢迎，{{ authStore.user?.username }}！
               </div>
+              <div class="user-credits">
+                积分：{{ authStore.user?.credits || 0 }}
+              </div>
               <button @click="handleLogout" class="auth-btn logout-btn">
                 退出登录
               </button>
@@ -63,24 +66,28 @@
                     :class="['processing-btn', { active: selectedProcessing === 'ghibli_style' }]"
                   >
                     🎨 吉卜力风格
+                    <span class="credits-cost">消耗 10 积分</span>
                   </button>
                   <button 
                     @click="selectedProcessing = 'grayscale'"
                     :class="['processing-btn', { active: selectedProcessing === 'grayscale' }]"
                   >
                     ⚫ 灰度转换
+                    <span class="credits-cost">消耗 10 积分</span>
                   </button>
                   <button 
                     @click="selectedProcessing = 'creative_upscale'"
                     :class="['processing-btn', { active: selectedProcessing === 'creative_upscale' }]"
                   >
                     ✨ 创意放大修复
+                    <span class="credits-cost">消耗 10 积分</span>
                   </button>
                   <button 
                     @click="selectedProcessing = 'text_to_image'"
                     :class="['processing-btn', { active: selectedProcessing === 'text_to_image' }]"
                   >
                     🎯 AI文生图
+                    <span class="credits-cost">消耗 10 积分</span>
                   </button>
                 </div>
               </div>
@@ -289,6 +296,20 @@ onMounted(() => {
 
 const handleImageUpload = async (file: File) => {
   try {
+    // 检查用户是否登录
+    if (!authStore.isAuthenticated) {
+      alert('请先登录后再使用功能')
+      showAuthModal('login')
+      return
+    }
+
+    // 检查积分是否足够
+    const creditCheck = await authStore.checkCredits(10)
+    if (!creditCheck.success) {
+      alert(`积分不足！当前积分：${creditCheck.current_credits}，需要积分：10`)
+      return
+    }
+
     processing.value = true
     originalImage.value = URL.createObjectURL(file)
     
@@ -316,6 +337,20 @@ const handleImageUpload = async (file: File) => {
 
 const handleTextToImage = async () => {
   try {
+    // 检查用户是否登录
+    if (!authStore.isAuthenticated) {
+      alert('请先登录后再使用功能')
+      showAuthModal('login')
+      return
+    }
+
+    // 检查积分是否足够
+    const creditCheck = await authStore.checkCredits(10)
+    if (!creditCheck.success) {
+      alert(`积分不足！当前积分：${creditCheck.current_credits}，需要积分：10`)
+      return
+    }
+
     processing.value = true
     originalImage.value = '' // 文生图没有原图
     
@@ -503,6 +538,16 @@ const handleTextToImage = async () => {
   font-size: 1rem;
   font-weight: 500;
   min-width: 140px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+}
+
+.credits-cost {
+  font-size: 0.75rem;
+  color: rgba(255, 255, 255, 0.5);
+  font-weight: 400;
 }
 
 .processing-btn:hover {
@@ -793,6 +838,17 @@ const handleTextToImage = async () => {
   padding: 12px 20px;
   background: rgba(255, 255, 255, 0.1);
   border-radius: 12px;
+  backdrop-filter: blur(10px);
+}
+
+.user-credits {
+  color: #4ade80;
+  font-size: 1rem;
+  font-weight: 600;
+  padding: 8px 16px;
+  background: rgba(74, 222, 128, 0.1);
+  border: 1px solid rgba(74, 222, 128, 0.3);
+  border-radius: 8px;
   backdrop-filter: blur(10px);
 }
 

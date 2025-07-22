@@ -7,10 +7,12 @@ from app.database import get_db
 from app.models.models import User, EmailVerification, EmailSendLog
 from app.models.schemas import (
     UserCreate, UserLogin, UserResponse, Token, 
-    SendVerificationCodeRequest, VerifyCodeRequest, SendVerificationCodeResponse
+    SendVerificationCodeRequest, VerifyCodeRequest, SendVerificationCodeResponse,
+    CreditResponse, CreditDeductionRequest
 )
 from app.utils.auth import verify_password, get_password_hash, create_access_token, verify_token
 from app.utils.email import send_verification_email, generate_verification_code
+from app.utils.credits import check_user_credits, deduct_user_credits
 from app.config import settings
 
 router = APIRouter()
@@ -244,3 +246,52 @@ async def login_user(user_login: UserLogin, db: Session = Depends(get_db)):
 @router.get("/me", response_model=UserResponse)
 async def read_users_me(current_user: User = Depends(get_current_user)):
     return current_user
+
+# 积分相关功能
+@router.get("/credits", response_model=CreditResponse)
+async def get_user_credits(current_user: User = Depends(get_current_user)):
+    """获取用户当前积分"""
+    return CreditResponse(
+        success=True,
+        message=f"当前积分：{current_user.credits}",
+        current_credits=current_user.credits
+    )
+
+@router.post("/credits/check", response_model=CreditResponse)
+async def check_credits_sufficient(
+    request: CreditDeductionRequest,
+    current_user: User = Depends(get_current_user)
+):
+    """检查积分是否足够"""
+    sufficient = check_user_credits(current_user, request.cost)
+    return CreditResponse(
+        success=sufficient,
+        message=f"积分{'足够' if sufficient else '不足'}，当前积分：{current_user.credits}，需要积分：{request.cost}",
+        current_credits=current_user.credits
+    )
+
+@router.post("/credits/deduct", response_model=CreditResponse)
+async def deduct_credits(
+    request: CreditDeductionRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """扣除用户积分（下载时调用）"""
+    if not check_user_credits(current_user, request.cost):
+        raise HTTPException(
+            status_code=400,
+            detail=f"积分不足，当前积分：{current_user.credits}，需要积分：{request.cost}"
+        )
+    
+    success = deduct_user_credits(db, current_user, request.cost)
+    if not success:
+        raise HTTPException(
+            status_code=400,
+            detail="积分扣除失败"
+        )
+    
+    return CreditResponse(
+        success=True,
+        message=f"成功扣除{request.cost}积分，剩余积分：{current_user.credits}",
+        current_credits=current_user.credits
+    )
