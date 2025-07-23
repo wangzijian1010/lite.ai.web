@@ -1,0 +1,12 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(cd \"F:\\lite.ai.web\\backend\")",
+      "Bash(.venvScriptsactivate)",
+      "Bash(python -m uvicorn app.main:app --reload --host 0.0.0.0 --port 8000)",
+      "Bash(cd \"F:/lite.ai.web/backend\")",
+      "Bash(./venv/Scripts/activate)"
+    ],
+    "deny": []
+  }
+}

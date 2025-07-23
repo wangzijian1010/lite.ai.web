@@ -43,6 +43,11 @@ backend/wheels/
 backend/*.egg-info/
 backend/.installed.cfg
 backend/*.egg
+# 忽略所有 Python 缓存文件和目录
+__pycache__/
+*.py[cod]
+*$py.class
+
 
 # Python virtual environments
 backend/venv/
