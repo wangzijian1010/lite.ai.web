@@ -174,11 +174,13 @@ const switchMode = () => {
 
 // 发送验证码
 const sendVerificationCode = async () => {
+  console.log('Sending verification code for email:', form.email)
   try {
     sendingCode.value = true
     codeStatus.value = null
     
     const response = await authStore.sendVerificationCode(form.email)
+    console.log('Received response:', response)
     
     if (response.success) {
       codeStatus.value = { type: 'success', message: response.message }
@@ -190,6 +192,8 @@ const sendVerificationCode = async () => {
       }
     }
   } catch (err: any) {
+    console.error('Error in sendVerificationCode:', err)
+    console.error('Error response:', err.response)
     const errorMsg = err.response?.data?.detail || err.message || '发送失败'
     codeStatus.value = { type: 'error', message: errorMsg }
   } finally {
@@ -261,24 +265,43 @@ const handleSubmit = async () => {
   right: 0;
   bottom: 0;
   background: rgba(0, 0, 0, 0.7);
-  backdrop-filter: blur(5px);
+  backdrop-filter: blur(10px);
   display: flex;
   align-items: center;
   justify-content: center;
   z-index: 1000;
   padding: 20px;
+  animation: fadeIn 0.3s ease;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
 }
 
 .auth-modal {
-  background: rgba(255, 255, 255, 0.05);
-  backdrop-filter: blur(20px);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 20px;
+  background: rgba(30, 41, 59, 0.9);
+  backdrop-filter: blur(30px);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 24px;
   padding: 40px;
   width: 100%;
-  max-width: 400px;
+  max-width: 450px;
   max-height: 90vh;
   overflow-y: auto;
+  box-shadow: 0 25px 50px rgba(0, 0, 0, 0.5);
+  animation: slideIn 0.4s cubic-bezier(0.25, 0.8, 0.25, 1);
+}
+
+@keyframes slideIn {
+  from {
+    opacity: 0;
+    transform: translateY(-30px) scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
 }
 
 .auth-header {
@@ -290,9 +313,13 @@ const handleSubmit = async () => {
 
 .auth-header h2 {
   color: white;
-  font-size: 1.8rem;
-  font-weight: 600;
+  font-size: 2rem;
+  font-weight: 700;
   margin: 0;
+  background: linear-gradient(135deg, #60a5fa, #8b5cf6);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
 }
 
 .close-btn {
@@ -302,8 +329,8 @@ const handleSubmit = async () => {
   font-size: 2rem;
   cursor: pointer;
   padding: 0;
-  width: 30px;
-  height: 30px;
+  width: 40px;
+  height: 40px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -313,43 +340,45 @@ const handleSubmit = async () => {
 
 .close-btn:hover {
   color: white;
-  background: rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.15);
+  transform: rotate(90deg);
 }
 
 .auth-form {
   display: flex;
   flex-direction: column;
-  gap: 20px;
+  gap: 24px;
 }
 
 .input-group {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 10px;
 }
 
 .input-group label {
   color: white;
   font-weight: 500;
-  font-size: 0.95rem;
+  font-size: 1.05rem;
 }
 
 .auth-input {
-  padding: 12px 16px;
-  border: 2px solid rgba(255, 255, 255, 0.2);
-  border-radius: 12px;
+  padding: 16px 20px;
+  border: 2px solid rgba(255, 255, 255, 0.15);
+  border-radius: 16px;
   background: rgba(255, 255, 255, 0.05);
   color: white;
-  font-size: 1rem;
+  font-size: 1.05rem;
   transition: all 0.3s ease;
   backdrop-filter: blur(10px);
+  box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.1);
 }
 
 .auth-input:focus {
   outline: none;
-  border-color: rgba(120, 119, 198, 0.6);
-  background: rgba(120, 119, 198, 0.1);
-  box-shadow: 0 0 0 3px rgba(120, 119, 198, 0.2);
+  border-color: #60a5fa;
+  background: rgba(96, 165, 250, 0.1);
+  box-shadow: 0 0 0 4px rgba(96, 165, 250, 0.2);
 }
 
 .auth-input::placeholder {
@@ -357,27 +386,29 @@ const handleSubmit = async () => {
 }
 
 .auth-submit-btn {
-  padding: 14px 24px;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  padding: 18px 28px;
+  background: linear-gradient(135deg, #60a5fa, #8b5cf6);
   border: none;
-  border-radius: 12px;
+  border-radius: 16px;
   color: white;
-  font-size: 1.1rem;
+  font-size: 1.15rem;
   font-weight: 600;
   cursor: pointer;
-  transition: all 0.3s ease;
+  transition: all 0.3s cubic-bezier(0.25, 0.8, 0.25, 1);
   margin-top: 10px;
+  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
 }
 
 .auth-submit-btn:hover:not(:disabled) {
-  transform: translateY(-2px);
-  box-shadow: 0 8px 25px rgba(102, 126, 234, 0.3);
+  transform: translateY(-3px);
+  box-shadow: 0 10px 25px rgba(96, 165, 250, 0.4);
 }
 
 .auth-submit-btn:disabled {
   opacity: 0.6;
   cursor: not-allowed;
   transform: none;
+  box-shadow: none;
 }
 
 .loading {
@@ -387,34 +418,36 @@ const handleSubmit = async () => {
 }
 
 .error-message {
-  color: #ff6b6b;
-  background: rgba(255, 107, 107, 0.1);
-  border: 1px solid rgba(255, 107, 107, 0.3);
-  border-radius: 8px;
-  padding: 12px;
-  font-size: 0.9rem;
+  color: #f87171;
+  background: rgba(248, 113, 113, 0.1);
+  border: 1px solid rgba(248, 113, 113, 0.3);
+  border-radius: 12px;
+  padding: 16px;
+  font-size: 1rem;
   text-align: center;
+  font-weight: 500;
 }
 
 .switch-auth {
   text-align: center;
   margin-top: 20px;
-  color: rgba(255, 255, 255, 0.7);
-  font-size: 0.95rem;
+  color: rgba(255, 255, 255, 0.8);
+  font-size: 1.05rem;
 }
 
 .switch-btn {
   background: none;
   border: none;
-  color: #667eea;
+  color: #60a5fa;
   cursor: pointer;
   font-weight: 600;
   text-decoration: underline;
   font-size: inherit;
+  transition: color 0.2s ease;
 }
 
 .switch-btn:hover {
-  color: #7877c6;
+  color: #93c5fd;
 }
 
 @media (max-width: 480px) {
@@ -423,12 +456,12 @@ const handleSubmit = async () => {
   }
   
   .auth-header h2 {
-    font-size: 1.5rem;
+    font-size: 1.75rem;
   }
   
   .verification-input-group {
     flex-direction: column;
-    gap: 10px;
+    gap: 12px;
   }
   
   .verification-input {
@@ -443,7 +476,7 @@ const handleSubmit = async () => {
 /* 验证码相关样式 */
 .verification-input-group {
   display: flex;
-  gap: 8px;
+  gap: 12px;
   align-items: flex-start;
 }
 
@@ -453,65 +486,73 @@ const handleSubmit = async () => {
 }
 
 .send-code-btn {
-  padding: 12px 16px;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  padding: 16px 20px;
+  background: linear-gradient(135deg, #60a5fa, #8b5cf6);
   border: none;
-  border-radius: 12px;
+  border-radius: 16px;
   color: white;
-  font-size: 0.9rem;
+  font-size: 1rem;
   font-weight: 500;
   cursor: pointer;
-  transition: all 0.3s ease;
+  transition: all 0.3s cubic-bezier(0.25, 0.8, 0.25, 1);
   white-space: nowrap;
-  min-width: 100px;
+  min-width: 120px;
+  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
 }
 
 .send-code-btn:hover:not(:disabled) {
-  transform: translateY(-1px);
-  box-shadow: 0 4px 15px rgba(102, 126, 234, 0.3);
+  transform: translateY(-2px);
+  box-shadow: 0 6px 15px rgba(96, 165, 250, 0.3);
 }
 
 .send-code-btn:disabled {
   opacity: 0.6;
   cursor: not-allowed;
   transform: none;
+  box-shadow: none;
 }
 
 .verification-status {
-  margin-top: 8px;
-  padding: 8px 12px;
-  border-radius: 6px;
-  font-size: 0.9rem;
+  margin-top: 10px;
+  padding: 12px 16px;
+  border-radius: 12px;
+  font-size: 0.95rem;
   font-weight: 500;
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 
 .verification-status.verified {
-  background: rgba(34, 197, 94, 0.1);
-  color: #22c55e;
-  border: 1px solid rgba(34, 197, 94, 0.3);
+  background: rgba(16, 185, 129, 0.15);
+  color: #10b981;
+  border: 1px solid rgba(16, 185, 129, 0.3);
 }
 
 .code-status {
-  margin-top: 8px;
-  padding: 8px 12px;
-  border-radius: 6px;
-  font-size: 0.9rem;
+  margin-top: 10px;
+  padding: 12px 16px;
+  border-radius: 12px;
+  font-size: 0.95rem;
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 
 .code-status.success {
-  background: rgba(34, 197, 94, 0.1);
-  color: #22c55e;
-  border: 1px solid rgba(34, 197, 94, 0.3);
+  background: rgba(16, 185, 129, 0.15);
+  color: #10b981;
+  border: 1px solid rgba(16, 185, 129, 0.3);
 }
 
 .code-status.error {
-  background: rgba(239, 68, 68, 0.1);
+  background: rgba(239, 68, 68, 0.15);
   color: #ef4444;
   border: 1px solid rgba(239, 68, 68, 0.3);
 }
 
 .code-status.info {
-  background: rgba(59, 130, 246, 0.1);
+  background: rgba(59, 130, 246, 0.15);
   color: #3b82f6;
   border: 1px solid rgba(59, 130, 246, 0.3);
 }

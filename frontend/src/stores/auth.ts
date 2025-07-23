@@ -64,12 +64,16 @@ export const useAuthStore = defineStore('auth', () => {
   }
 
   const sendVerificationCode = async (email: string) => {
+    console.log('Sending verification code to:', email);
     try {
       const response = await axios.post(`${API_BASE_URL}/send-verification-code`, {
         email
       })
+      console.log('Verification code response:', response.data);
       return response.data
-    } catch (error) {
+    } catch (error: any) {
+      console.error('Error sending verification code:', error);
+      console.error('Error response:', error.response?.data);
       throw error
     }
   }

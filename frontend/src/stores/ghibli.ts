@@ -262,8 +262,9 @@ export const useGhibliStore = defineStore('ghibli', {
             
             // 检查任务状态
             if (response.data.status === 'completed' && response.data.result_url) {
-              const fullImageUrl = `${API_BASE_URL}${response.data.result_url}`
-              return fullImageUrl
+              // 移除API基础URL前缀，因为我们直接使用相对路径显示图片
+              const imageUrl = response.data.result_url;
+              return imageUrl;
             } else if (response.data.status === 'failed') {
               throw new Error(response.data.error || '图像生成失败')
             }
@@ -312,17 +313,18 @@ export const useGhibliStore = defineStore('ghibli', {
         )
         
         if (response.data.success && response.data.processed_image_url) {
-          const fullImageUrl = `${API_BASE_URL}${response.data.processed_image_url}`
+          // 移除API基础URL前缀，因为我们直接使用相对路径显示图片
+          const imageUrl = response.data.processed_image_url;
           
           this.processingHistory.push({
             original: '', // 文生图没有原图
-            result: fullImageUrl,
+            result: imageUrl,
             timestamp: Date.now(),
             processingType: response.data.processing_type,
             processingTime: response.data.processing_time
           })
           
-          return fullImageUrl
+          return imageUrl;
         } else {
           throw new Error(response.data.message || '文生图失败')
         }
@@ -366,17 +368,18 @@ export const useGhibliStore = defineStore('ghibli', {
         )
         
         if (response.data.success && response.data.processed_image_url) {
-          const fullImageUrl = `${API_BASE_URL}${response.data.processed_image_url}`
+          // 移除API基础URL前缀，因为我们直接使用相对路径显示图片
+          const imageUrl = response.data.processed_image_url;
           
           this.processingHistory.push({
             original: URL.createObjectURL(file),
-            result: fullImageUrl,
+            result: imageUrl,
             timestamp: Date.now(),
             processingType: response.data.processing_type,
             processingTime: response.data.processing_time
           })
           
-          return fullImageUrl
+          return imageUrl;
         } else {
           throw new Error(response.data.message || '处理失败')
         }

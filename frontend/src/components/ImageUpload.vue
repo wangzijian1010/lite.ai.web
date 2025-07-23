@@ -123,22 +123,65 @@ const formatFileSize = (bytes: number): string => {
 }
 
 .upload-area {
-  min-height: 280px;
+  min-height: 320px;
   display: flex;
   align-items: center;
   justify-content: center;
   flex-direction: column;
-  gap: 20px;
+  gap: 24px;
+  border: 2px dashed rgba(255, 255, 255, 0.2);
+  border-radius: 24px;
+  background: rgba(255, 255, 255, 0.03);
+  transition: all 0.3s ease;
+  cursor: pointer;
+  position: relative;
+  overflow: hidden;
+}
+
+.upload-area::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: linear-gradient(135deg, rgba(96, 165, 250, 0.1), rgba(139, 92, 246, 0.1));
+  opacity: 0;
+  transition: opacity 0.3s ease;
+  z-index: -1;
+}
+
+.upload-area:hover {
+  border-color: rgba(96, 165, 250, 0.5);
+  background: rgba(255, 255, 255, 0.05);
+  transform: translateY(-5px);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
+}
+
+.upload-area:hover::before {
+  opacity: 1;
+}
+
+.upload-area.dragover {
+  border-color: #60a5fa;
+  background: rgba(96, 165, 250, 0.1);
+  box-shadow: 0 10px 30px rgba(96, 165, 250, 0.2);
 }
 
 .upload-content {
   text-align: center;
+  padding: 20px;
+  z-index: 1;
 }
 
 .upload-icon {
-  font-size: 4rem;
+  font-size: 5rem;
   margin-bottom: 20px;
   animation: pulse 2s infinite;
+  background: linear-gradient(135deg, #60a5fa, #8b5cf6);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
 }
 
 @keyframes pulse {
@@ -151,40 +194,62 @@ const formatFileSize = (bytes: number): string => {
 }
 
 .upload-content h3 {
-  font-size: 1.4rem;
+  font-size: 1.75rem;
   color: white;
-  margin-bottom: 12px;
-  font-weight: 600;
+  margin-bottom: 16px;
+  font-weight: 700;
 }
 
 .upload-content p {
-  color: rgba(255, 255, 255, 0.6);
-  font-size: 1rem;
+  color: rgba(255, 255, 255, 0.7);
+  font-size: 1.1rem;
+  max-width: 400px;
+  line-height: 1.6;
 }
 
 .loading-content {
   display: flex;
+  flex-direction: column;
   align-items: center;
-  gap: 20px;
+  gap: 24px;
   color: white;
-  font-size: 1.1rem;
+  font-size: 1.25rem;
+  padding: 40px;
+}
+
+.loading-text {
+  font-weight: 500;
 }
 
 .file-info {
-  margin-top: 20px;
-  padding: 16px;
-  background: rgba(120, 119, 198, 0.1);
-  border-radius: 12px;
-  font-size: 0.95rem;
-  border: 1px solid rgba(120, 119, 198, 0.2);
+  margin-top: 30px;
+  padding: 20px;
+  background: rgba(30, 41, 59, 0.6);
+  border-radius: 16px;
+  font-size: 1rem;
+  border: 1px solid rgba(96, 165, 250, 0.3);
+  box-shadow: 0 5px 15px rgba(0, 0, 0, 0.1);
+  animation: slideUp 0.4s ease;
+}
+
+@keyframes slideUp {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 .file-info p {
-  margin: 6px 0;
-  color: rgba(255, 255, 255, 0.8);
+  margin: 8px 0;
+  color: rgba(255, 255, 255, 0.85);
 }
 
 .file-info strong {
   color: white;
+  font-weight: 600;
 }
 </style>

@@ -209,7 +209,8 @@ async def process_image_async(
     file: UploadFile = File(..., description="要处理的图像文件"),
     processing_type: str = Form(..., description="处理类型"),
     parameters: Optional[str] = Form(None, description="处理参数 (JSON格式)"),
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
 ):
     """
     异步处理图像的端点（支持ComfyUI进度跟踪，需要登录）
@@ -226,6 +227,14 @@ async def process_image_async(
             raise HTTPException(
                 status_code=400, 
                 detail=f"积分不足，当前积分：{current_user.credits}，需要积分：{required_credits}。请充值后再试。"
+            )
+            
+        # 扣除积分
+        success = deduct_user_credits(db, current_user, required_credits)
+        if not success:
+            raise HTTPException(
+                status_code=400,
+                detail="积分扣除失败"
             )
         
         # 验证文件
@@ -346,7 +355,8 @@ async def process_image(
     file: UploadFile = File(..., description="要处理的图像文件"),
     processing_type: str = Form(..., description="处理类型"),
     parameters: Optional[str] = Form(None, description="处理参数 (JSON格式)"),
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
 ):
     """
     处理图像的主要端点（需要登录）
@@ -356,6 +366,7 @@ async def process_image(
         processing_type: 处理类型 (grayscale, ghibli_style 等)
         parameters: 可选的处理参数，JSON字符串格式
         current_user: 当前登录用户
+        db: 数据库会话
     
     Returns:
         ImageProcessResponse: 处理结果
@@ -367,12 +378,20 @@ async def process_image(
              -F "processing_type=grayscale"
     """
     try:
-        # 检查积分是否足够（处理时不扣除，下载时才扣除）
+        # 检查积分是否足够
         required_credits = 10
         if not check_user_credits(current_user, required_credits):
             raise HTTPException(
                 status_code=400, 
                 detail=f"积分不足，当前积分：{current_user.credits}，需要积分：{required_credits}。请充值后再试。"
+            )
+            
+        # 扣除积分
+        success = deduct_user_credits(db, current_user, required_credits)
+        if not success:
+            raise HTTPException(
+                status_code=400,
+                detail="积分扣除失败"
             )
         
         # 验证文件
@@ -439,45 +458,54 @@ async def process_image(
 @router.get("/files/{filename}")
 async def get_file(
     filename: str, 
+    download: bool = False,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
     """
-    获取处理后的文件并扣除积分
+    获取处理后的文件
     
     Args:
         filename: 文件名
-        current_user: 当前登录用户
-        db: 数据库会话
+        download: 是否下载文件（默认为False，用于在网页中显示）
+        current_user: 当前登录用户（仅下载时需要）
+        db: 数据库会话（仅下载时需要）
         
     Returns:
         FileResponse: 文件响应
     """
-    # 检查积分是否足够
-    required_credits = 10
-    if not check_user_credits(current_user, required_credits):
-        raise HTTPException(
-            status_code=400, 
-            detail=f"积分不足，当前积分：{current_user.credits}，需要积分：{required_credits}"
-        )
-    
     file_path = os.path.join(settings.upload_dir, filename)
     
     if not os.path.exists(file_path):
         raise HTTPException(status_code=404, detail="文件不存在")
     
-    # 扣除积分
-    success = deduct_user_credits(db, current_user, required_credits)
-    if not success:
-        raise HTTPException(
-            status_code=400,
-            detail="积分扣除失败"
-        )
+    # 只有在下载时才检查积分并扣除
+    if download:
+        # 检查积分是否足够
+        required_credits = 10
+        if not check_user_credits(current_user, required_credits):
+            raise HTTPException(
+                status_code=400, 
+                detail=f"积分不足，当前积分：{current_user.credits}，需要积分：{required_credits}"
+            )
+        
+        # 扣除积分
+        success = deduct_user_credits(db, current_user, required_credits)
+        if not success:
+            raise HTTPException(
+                status_code=400,
+                detail="积分扣除失败"
+            )
 
+    # 确定响应头
+    headers = {}
+    if download:
+        headers["Content-Disposition"] = f"attachment; filename={filename}"
+    
     return FileResponse(
         file_path,
         media_type="image/png",
-        headers={"Content-Disposition": f"attachment; filename={filename}"}
+        headers=headers
     )
 
 @router.post("/convert-to-ghibli")
@@ -506,7 +534,8 @@ async def text_to_image_async(
     height: int = Form(512, description="图片高度"),
     steps: int = Form(20, description="采样步数"),
     cfg: float = Form(8.0, description="CFG值"),
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
 ):
     """
     ComfyUI 异步文生图端点（需要登录）
@@ -523,6 +552,14 @@ async def text_to_image_async(
             raise HTTPException(
                 status_code=400, 
                 detail=f"积分不足，当前积分：{current_user.credits}，需要积分：{required_credits}。请充值后再试。"
+            )
+            
+        # 扣除积分
+        success = deduct_user_credits(db, current_user, required_credits)
+        if not success:
+            raise HTTPException(
+                status_code=400,
+                detail="积分扣除失败"
             )
         
         # 生成任务ID
@@ -659,7 +696,8 @@ async def text_to_image(
     height: int = Form(512, description="图片高度"),
     steps: int = Form(20, description="采样步数"),
     cfg: float = Form(8.0, description="CFG值"),
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
 ):
     """
     ComfyUI 文生图端点（需要登录）
@@ -673,10 +711,11 @@ async def text_to_image(
         steps: 采样步数 (默认: 20)
         cfg: CFG值 (默认: 8.0)
         current_user: 当前登录用户
-    
+        db: 数据库会话
+        
     Returns:
         ImageProcessResponse: 生成结果
-    
+        
     Example:
         curl -X POST "http://localhost:8000/api/text-to-image" \
              -H "Authorization: Bearer <token>" \
@@ -691,6 +730,14 @@ async def text_to_image(
             raise HTTPException(
                 status_code=400, 
                 detail=f"积分不足，当前积分：{current_user.credits}，需要积分：{required_credits}。请充值后再试。"
+            )
+            
+        # 扣除积分
+        success = deduct_user_credits(db, current_user, required_credits)
+        if not success:
+            raise HTTPException(
+                status_code=400,
+                detail="积分扣除失败"
             )
         
         # 准备参数

@@ -77,9 +77,12 @@ async def send_verification_code(
     db: Session = Depends(get_db)
 ):
     """发送邮箱验证码"""
+    print(f"Received request to send verification code to: {request.email}")
+    
     # 检查邮箱是否已被注册
     existing_user = get_user_by_email(db, request.email)
     if existing_user:
+        print(f"Email {request.email} already registered")
         raise HTTPException(
             status_code=400,
             detail="该邮箱已被注册"
@@ -88,6 +91,7 @@ async def send_verification_code(
     # 检查发送冷却时间
     cooldown_remaining = check_email_send_cooldown(db, request.email)
     if cooldown_remaining > 0:
+        print(f"Email {request.email} is in cooldown period: {cooldown_remaining} seconds remaining")
         return SendVerificationCodeResponse(
             success=False,
             message=f"发送过于频繁，请等待 {cooldown_remaining} 秒后重试",
@@ -97,6 +101,7 @@ async def send_verification_code(
     # 生成验证码
     code = generate_verification_code(settings.verification_code_length)
     expires_at = datetime.utcnow() + timedelta(minutes=settings.verification_code_expire_minutes)
+    print(f"Generated verification code for {request.email}: {code}")
     
     # 删除该邮箱之前的验证码记录
     db.query(EmailVerification).filter(EmailVerification.email == request.email).delete()
@@ -116,7 +121,9 @@ async def send_verification_code(
     db.commit()
     
     # 发送邮件
+    print(f"Attempting to send verification email to {request.email}")
     email_sent = await send_verification_email(request.email, code)
+    print(f"Email sending result for {request.email}: {email_sent}")
     
     if email_sent:
         return SendVerificationCodeResponse(

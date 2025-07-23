@@ -1,5 +1,45 @@
 <template>
   <div class="home">
+    <!-- 顶部导航栏 -->
+    <header class="top-navbar">
+      <div class="navbar-content">
+        <div class="logo">
+          <span class="gradient-text">吉卜力 AI</span>
+        </div>
+        
+        <!-- 用户区域 -->
+        <div class="user-area">
+          <div v-if="authStore.isAuthenticated" class="user-menu">
+            <div class="user-avatar">
+              {{ authStore.user?.username?.charAt(0).toUpperCase() }}
+            </div>
+            <div class="user-dropdown" :class="{ open: dropdownOpen }">
+              <button @click="toggleDropdown" class="dropdown-trigger">
+                <span class="username">{{ authStore.user?.username }}</span>
+                <span class="dropdown-arrow">▼</span>
+              </button>
+              <div class="dropdown-content">
+                <div class="dropdown-item credits-item">
+                  积分: {{ authStore.user?.credits || 0 }}
+                </div>
+                <button @click="openSettings" class="dropdown-item settings-item">
+                  <span>⚙️ 设置</span>
+                </button>
+              </div>
+            </div>
+          </div>
+          <div v-else class="auth-buttons">
+            <button @click="showAuthModal('login')" class="auth-btn login-btn">
+              登录
+            </button>
+            <button @click="showAuthModal('register')" class="auth-btn register-btn">
+              注册
+            </button>
+          </div>
+        </div>
+      </div>
+    </header>
+
     <!-- Hero Section -->
     <section class="hero">
       <div class="hero-content">
@@ -8,31 +48,8 @@
             <span class="gradient-text">吉卜力 AI</span>
           </h1>
           <p class="hero-subtitle">
-            用 AI 的魔法，将普通照片转换为充满想象力的吉卜力工作室风格艺术作品
+            AI 赋能，让您的照片秒变艺术大片。支持多种风格转换，包括独特的吉卜力梦幻风，轻松打造个性视觉作品。
           </p>
-          
-          <!-- 用户认证区域 -->
-          <div class="auth-section">
-            <div v-if="authStore.isAuthenticated" class="user-info">
-              <div class="user-welcome">
-                欢迎，{{ authStore.user?.username }}！
-              </div>
-              <div class="user-credits">
-                积分：{{ authStore.user?.credits || 0 }}
-              </div>
-              <button @click="handleLogout" class="auth-btn logout-btn">
-                退出登录
-              </button>
-            </div>
-            <div v-else class="auth-buttons">
-              <button @click="showAuthModal('login')" class="auth-btn login-btn">
-                登录
-              </button>
-              <button @click="showAuthModal('register')" class="auth-btn register-btn">
-                注册
-              </button>
-            </div>
-          </div>
         </div>
         
         <div class="hero-visual">
@@ -247,7 +264,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, onUnmounted } from 'vue'
 import ImageUpload from '@/components/ImageUpload.vue'
 import ImageComparison from '@/components/ImageComparison.vue'
 import AuthModal from '@/components/AuthModal.vue'
@@ -260,6 +277,7 @@ const authStore = useAuthStore()
 // 认证相关
 const authModalVisible = ref(false)
 const authMode = ref<'login' | 'register'>('login')
+const dropdownOpen = ref(false)
 
 // 其他现有变量
 const originalImage = ref<string>('')
@@ -278,8 +296,24 @@ const showAuthModal = (mode: 'login' | 'register') => {
   authModalVisible.value = true
 }
 
-const handleLogout = () => {
-  authStore.logout()
+const toggleDropdown = () => {
+  dropdownOpen.value = !dropdownOpen.value
+}
+
+const openSettings = () => {
+  const confirmed = confirm('设置选项:\n\n1. 点击"确定"退出登录\n2. 点击"取消"返回')
+  if (confirmed) {
+    authStore.logout()
+  }
+  dropdownOpen.value = false
+}
+
+// 点击外部关闭下拉菜单
+const handleClickOutside = (event: Event) => {
+  const dropdown = document.querySelector('.user-dropdown')
+  if (dropdown && !dropdown.contains(event.target as Node)) {
+    dropdownOpen.value = false
+  }
 }
 
 const handleAuthSuccess = () => {
@@ -292,6 +326,13 @@ onMounted(() => {
   ghibliStore.loadAvailableProcessors()
   // 加载可用的模型列表
   ghibliStore.loadAvailableModels()
+  // 添加点击外部关闭下拉菜单的事件监听
+  document.addEventListener('click', handleClickOutside)
+})
+
+onUnmounted(() => {
+  // 移除事件监听
+  document.removeEventListener('click', handleClickOutside)
 })
 
 const handleImageUpload = async (file: File) => {
@@ -374,6 +415,181 @@ const handleTextToImage = async () => {
 <style scoped>
 .home {
   min-height: 100vh;
+}
+
+/* 顶部导航栏 */
+.top-navbar {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 1000;
+  background: rgba(26, 32, 44, 0.95);
+  backdrop-filter: blur(20px);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  padding: 12px 0;
+}
+
+.navbar-content {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 0 40px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.logo {
+  font-size: 1.5rem;
+  font-weight: 700;
+}
+
+.user-area {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+/* 用户菜单 */
+.user-menu {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.user-avatar {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: white;
+  font-weight: 600;
+  font-size: 1rem;
+}
+
+.user-dropdown {
+  position: relative;
+}
+
+.dropdown-trigger {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: none;
+  border: none;
+  color: white;
+  cursor: pointer;
+  padding: 8px 12px;
+  border-radius: 8px;
+  transition: all 0.2s ease;
+}
+
+.dropdown-trigger:hover {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.username {
+  font-weight: 500;
+}
+
+.dropdown-arrow {
+  font-size: 0.8rem;
+  transition: transform 0.2s ease;
+}
+
+.user-dropdown.open .dropdown-arrow {
+  transform: rotate(180deg);
+}
+
+.dropdown-content {
+  position: absolute;
+  top: 100%;
+  right: 0;
+  background: rgba(26, 32, 44, 0.95);
+  backdrop-filter: blur(20px);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 12px;
+  padding: 8px;
+  min-width: 200px;
+  opacity: 0;
+  visibility: hidden;
+  transform: translateY(-10px);
+  transition: all 0.2s ease;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
+}
+
+.user-dropdown.open .dropdown-content {
+  opacity: 1;
+  visibility: visible;
+  transform: translateY(0);
+}
+
+.dropdown-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 16px;
+  border-radius: 8px;
+  transition: all 0.2s ease;
+  border: none;
+  background: none;
+  color: white;
+  cursor: pointer;
+  width: 100%;
+  text-align: left;
+}
+
+.dropdown-item:hover {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.credits-item {
+  background: rgba(74, 222, 128, 0.1);
+  border: 1px solid rgba(74, 222, 128, 0.2);
+  cursor: default;
+  color: #34d399;
+  font-weight: 600;
+  justify-content: center;
+}
+
+.credits-item:hover {
+  background: rgba(74, 222, 128, 0.15);
+}
+
+.settings-item:hover {
+  background: rgba(59, 130, 246, 0.1);
+}
+
+/* 认证按钮 */
+.auth-buttons {
+  display: flex;
+  gap: 12px;
+}
+
+.auth-btn {
+  padding: 8px 20px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 20px;
+  background: rgba(255, 255, 255, 0.05);
+  color: white;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  font-weight: 500;
+  backdrop-filter: blur(10px);
+}
+
+.login-btn:hover {
+  border-color: rgba(59, 130, 246, 0.6);
+  background: rgba(59, 130, 246, 0.1);
+}
+
+.register-btn:hover {
+  border-color: rgba(147, 51, 234, 0.6);
+  background: rgba(147, 51, 234, 0.1);
 }
 
 /* Hero Section */
@@ -898,18 +1114,766 @@ const handleTextToImage = async () => {
   transform: translateY(-2px);
 }
 
+<style scoped>
+.home {
+  min-height: 100vh;
+  background: linear-gradient(180deg, #0f172a 0%, #1e293b 100%);
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
+}
+
+/* 顶部导航栏 */
+.top-navbar {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 1000;
+  background: rgba(30, 41, 59, 0.8);
+  backdrop-filter: blur(20px);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  padding: 16px 0;
+  transition: all 0.3s ease;
+}
+
+.navbar-content {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 0 40px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.logo {
+  font-size: 1.75rem;
+  font-weight: 700;
+  background: linear-gradient(135deg, #60a5fa, #8b5cf6);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.user-area {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+/* 用户菜单 */
+.user-menu {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.user-avatar {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #60a5fa, #8b5cf6);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: white;
+  font-weight: 600;
+  font-size: 1rem;
+  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+  transition: transform 0.2s ease;
+}
+
+.user-avatar:hover {
+  transform: scale(1.05);
+}
+
+.user-dropdown {
+  position: relative;
+}
+
+.dropdown-trigger {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: none;
+  border: none;
+  color: white;
+  cursor: pointer;
+  padding: 8px 12px;
+  border-radius: 12px;
+  transition: all 0.2s ease;
+}
+
+.dropdown-trigger:hover {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.username {
+  font-weight: 500;
+}
+
+.dropdown-arrow {
+  font-size: 0.8rem;
+  transition: transform 0.3s ease;
+}
+
+.user-dropdown.open .dropdown-arrow {
+  transform: rotate(180deg);
+}
+
+.dropdown-content {
+  position: absolute;
+  top: 100%;
+  right: 0;
+  background: rgba(30, 41, 59, 0.95);
+  backdrop-filter: blur(20px);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 16px;
+  padding: 8px;
+  min-width: 220px;
+  opacity: 0;
+  visibility: hidden;
+  transform: translateY(-10px);
+  transition: all 0.3s cubic-bezier(0.25, 0.8, 0.25, 1);
+  box-shadow: 0 10px 25px rgba(0, 0, 0, 0.3);
+  z-index: 100;
+}
+
+.user-dropdown.open .dropdown-content {
+  opacity: 1;
+  visibility: visible;
+  transform: translateY(0);
+}
+
+.dropdown-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 16px;
+  border-radius: 12px;
+  transition: all 0.2s ease;
+  border: none;
+  background: none;
+  color: white;
+  cursor: pointer;
+  width: 100%;
+  text-align: left;
+  font-size: 0.95rem;
+}
+
+.dropdown-item:hover {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.credits-item {
+  background: rgba(16, 185, 129, 0.1);
+  border: 1px solid rgba(16, 185, 129, 0.2);
+  cursor: default;
+  color: #10b981;
+  font-weight: 600;
+  justify-content: center;
+}
+
+.credits-item:hover {
+  background: rgba(16, 185, 129, 0.15);
+}
+
+.settings-item:hover {
+  background: rgba(59, 130, 246, 0.1);
+}
+
+/* 认证按钮 */
+.auth-buttons {
+  display: flex;
+  gap: 12px;
+}
+
+.auth-btn {
+  padding: 10px 24px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 20px;
+  background: rgba(255, 255, 255, 0.05);
+  color: white;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  font-weight: 500;
+  backdrop-filter: blur(10px);
+  font-size: 0.95rem;
+}
+
+.login-btn:hover {
+  border-color: rgba(96, 165, 250, 0.6);
+  background: rgba(96, 165, 250, 0.1);
+  transform: translateY(-2px);
+}
+
+.register-btn {
+  background: linear-gradient(135deg, #60a5fa, #8b5cf6);
+  border-color: transparent;
+}
+
+.register-btn:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 15px rgba(96, 165, 250, 0.3);
+}
+
+/* Hero Section */
+.hero {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  overflow: hidden;
+  padding-top: 80px;
+}
+
+.hero::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: radial-gradient(circle at top right, rgba(96, 165, 250, 0.1), transparent 30%),
+              radial-gradient(circle at bottom left, rgba(139, 92, 246, 0.1), transparent 30%);
+  z-index: -1;
+}
+
+.hero-content {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 80px;
+  align-items: center;
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 0 40px;
+}
+
+.hero-text {
+  z-index: 2;
+}
+
+.hero-title {
+  font-size: clamp(3rem, 8vw, 4.5rem);
+  font-weight: 800;
+  line-height: 1.1;
+  margin-bottom: 24px;
+  background: linear-gradient(135deg, #60a5fa, #8b5cf6, #ec4899);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  animation: gradientShift 5s ease infinite;
+}
+
+@keyframes gradientShift {
+  0%, 100% { background-position: 0% 50%; }
+  50% { background-position: 100% 50%; }
+}
+
+.hero-subtitle {
+  font-size: 1.25rem;
+  color: rgba(255, 255, 255, 0.85);
+  line-height: 1.6;
+  font-weight: 300;
+  max-width: 500px;
+}
+
+.hero-visual {
+  position: relative;
+  height: 400px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.floating-elements {
+  position: relative;
+  width: 100%;
+  height: 100%;
+}
+
+.element {
+  position: absolute;
+  font-size: 3rem;
+  animation: float 6s ease-in-out infinite;
+  opacity: 0.8;
+}
+
+.element-1 {
+  top: 20%;
+  left: 20%;
+  animation-delay: 0s;
+}
+
+.element-2 {
+  top: 60%;
+  right: 30%;
+  animation-delay: 1.5s;
+}
+
+.element-3 {
+  bottom: 30%;
+  left: 10%;
+  animation-delay: 3s;
+}
+
+.element-4 {
+  top: 10%;
+  right: 10%;
+  animation-delay: 4.5s;
+}
+
+@keyframes float {
+  0%, 100% {
+    transform: translateY(0px) rotate(0deg);
+  }
+  50% {
+    transform: translateY(-20px) rotate(10deg);
+  }
+}
+
+/* Main Content */
+.main-content {
+  padding: 80px 0;
+  background: linear-gradient(180deg, 
+    rgba(30, 41, 59, 0) 0%, 
+    rgba(30, 41, 59, 0.7) 50%, 
+    rgba(30, 41, 59, 1) 100%
+  );
+}
+
+.container {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 0 40px;
+}
+
+.content-grid {
+  display: grid;
+  gap: 60px;
+}
+
+.section-header {
+  text-align: center;
+  margin-bottom: 40px;
+}
+
+.section-header h2 {
+  font-size: 2.5rem;
+  font-weight: 700;
+  color: white;
+  margin-bottom: 16px;
+  background: linear-gradient(135deg, #60a5fa, #8b5cf6);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.section-header p {
+  font-size: 1.1rem;
+  color: rgba(255, 255, 255, 0.75);
+  max-width: 600px;
+  margin: 0 auto;
+}
+
+/* Upload Section */
+.upload-card {
+  background: rgba(30, 41, 59, 0.6);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 24px;
+  padding: 40px;
+  backdrop-filter: blur(20px);
+  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.3);
+  transition: transform 0.3s ease, box-shadow 0.3s ease;
+}
+
+.upload-card:hover {
+  transform: translateY(-5px);
+  box-shadow: 0 25px 60px rgba(0, 0, 0, 0.4);
+}
+
+.processing-selector {
+  margin-bottom: 32px;
+}
+
+.processing-selector h3 {
+  color: white;
+  font-size: 1.5rem;
+  font-weight: 600;
+  margin-bottom: 24px;
+  text-align: center;
+}
+
+.processing-options {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 20px;
+}
+
+.processing-btn {
+  padding: 20px 16px;
+  border: 2px solid rgba(255, 255, 255, 0.15);
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.05);
+  color: rgba(255, 255, 255, 0.8);
+  cursor: pointer;
+  transition: all 0.3s cubic-bezier(0.25, 0.8, 0.25, 1);
+  font-weight: 500;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  text-align: center;
+  font-size: 1rem;
+}
+
+.processing-btn:hover {
+  border-color: rgba(96, 165, 250, 0.6);
+  background: rgba(96, 165, 250, 0.1);
+  transform: translateY(-5px);
+  box-shadow: 0 10px 25px rgba(96, 165, 250, 0.2);
+}
+
+.processing-btn.active {
+  border-color: #60a5fa;
+  background: linear-gradient(135deg, rgba(96, 165, 250, 0.2), rgba(139, 92, 246, 0.2));
+  box-shadow: 0 10px 30px rgba(96, 165, 250, 0.3);
+  color: white;
+}
+
+.credits-cost {
+  font-size: 0.85rem;
+  color: rgba(255, 255, 255, 0.7);
+  font-weight: 400;
+}
+
+/* Text to Image Inputs */
+.text-to-image-inputs {
+  margin-top: 24px;
+}
+
+.input-group {
+  margin-bottom: 24px;
+}
+
+.input-group label {
+  display: block;
+  color: white;
+  font-weight: 500;
+  margin-bottom: 12px;
+  font-size: 1.05rem;
+}
+
+.input-field {
+  width: 100%;
+  padding: 14px 18px;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.05);
+  color: white;
+  font-size: 1rem;
+  transition: all 0.3s ease;
+  backdrop-filter: blur(10px);
+}
+
+.input-field:focus {
+  outline: none;
+  border-color: #60a5fa;
+  box-shadow: 0 0 0 3px rgba(96, 165, 250, 0.2);
+  background: rgba(96, 165, 250, 0.05);
+}
+
+.input-field::placeholder {
+  color: rgba(255, 255, 255, 0.5);
+}
+
+.select-field {
+  cursor: pointer;
+}
+
+.generate-btn {
+  width: 100%;
+  margin-top: 20px;
+  padding: 16px;
+  font-size: 1.1rem;
+}
+
+/* Button Styles */
+.btn {
+  padding: 16px 32px;
+  border: none;
+  border-radius: 16px;
+  font-weight: 600;
+  font-size: 1.05rem;
+  cursor: pointer;
+  transition: all 0.3s cubic-bezier(0.25, 0.8, 0.25, 1);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+}
+
+.btn-primary {
+  background: linear-gradient(135deg, #60a5fa, #8b5cf6);
+  color: white;
+}
+
+.btn-primary:hover {
+  transform: translateY(-3px);
+  box-shadow: 0 10px 25px rgba(96, 165, 250, 0.4);
+}
+
+.btn-primary:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+  transform: none;
+  box-shadow: none;
+}
+
+/* Loading and Progress */
+.loading {
+  width: 24px;
+  height: 24px;
+  border: 3px solid rgba(255, 255, 255, 0.3);
+  border-top: 3px solid white;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
+.loading-content {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+}
+
+.progress-info {
+  text-align: center;
+  width: 100%;
+}
+
+.progress-text {
+  font-size: 1rem;
+  margin-bottom: 12px;
+  color: rgba(255, 255, 255, 0.9);
+}
+
+.progress-bar {
+  width: 100%;
+  height: 10px;
+  background: rgba(255, 255, 255, 0.15);
+  border-radius: 5px;
+  overflow: hidden;
+  margin-bottom: 8px;
+}
+
+.progress-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #60a5fa, #8b5cf6);
+  border-radius: 5px;
+  transition: width 0.5s ease;
+}
+
+.progress-percent {
+  font-size: 0.9rem;
+  color: rgba(255, 255, 255, 0.8);
+  font-weight: 500;
+}
+
+.upload-progress {
+  text-align: center;
+  padding: 50px;
+}
+
+.progress-container {
+  max-width: 400px;
+  margin: 0 auto;
+}
+
+/* Result Section */
+.result-card {
+  background: rgba(30, 41, 59, 0.6);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 24px;
+  padding: 40px;
+  backdrop-filter: blur(20px);
+  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.3);
+  transition: transform 0.3s ease, box-shadow 0.3s ease;
+}
+
+.result-card:hover {
+  transform: translateY(-5px);
+  box-shadow: 0 25px 60px rgba(0, 0, 0, 0.4);
+}
+
+.text-to-image-result {
+  text-align: center;
+}
+
+.generated-image {
+  max-width: 100%;
+  border-radius: 20px;
+  overflow: hidden;
+  display: inline-block;
+  box-shadow: 0 25px 50px rgba(0, 0, 0, 0.4);
+  transition: transform 0.3s ease;
+}
+
+.generated-image:hover {
+  transform: scale(1.02);
+}
+
+.generated-image img {
+  width: 100%;
+  height: auto;
+  display: block;
+  max-height: 512px;
+  object-fit: contain;
+}
+
+/* Features Section */
+.features {
+  padding: 120px 0 100px;
+  background: rgba(30, 41, 59, 0.95);
+}
+
+.features-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 40px;
+}
+
+.feature-item {
+  text-align: center;
+  padding: 40px 30px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 24px;
+  backdrop-filter: blur(20px);
+  transition: all 0.4s cubic-bezier(0.25, 0.8, 0.25, 1);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
+}
+
+.feature-item:hover {
+  transform: translateY(-10px);
+  box-shadow: 0 20px 40px rgba(96, 165, 250, 0.2);
+  border-color: rgba(96, 165, 250, 0.3);
+}
+
+.feature-icon {
+  font-size: 3.5rem;
+  margin-bottom: 24px;
+  background: linear-gradient(135deg, #60a5fa, #8b5cf6);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.feature-item h3 {
+  color: white;
+  font-size: 1.5rem;
+  font-weight: 600;
+  margin-bottom: 16px;
+}
+
+.feature-item p {
+  color: rgba(255, 255, 255, 0.8);
+  font-size: 1.05rem;
+  line-height: 1.6;
+}
+
+/* Loading and Warning Hints */
+.loading-hint, .warning-hint {
+  font-size: 0.95rem;
+  margin-top: 12px;
+  padding: 12px 16px;
+  border-radius: 12px;
+  font-weight: 500;
+}
+
+.loading-hint {
+  color: #93c5fd;
+  background: rgba(59, 130, 246, 0.1);
+  border: 1px solid rgba(59, 130, 246, 0.2);
+}
+
+.warning-hint {
+  color: #fbbf24;
+  background: rgba(245, 158, 11, 0.1);
+  border: 1px solid rgba(245, 158, 11, 0.2);
+}
+
+/* 响应式设计 */
 @media (max-width: 768px) {
-  .auth-section {
-    margin-top: 24px;
+  .navbar-content {
+    padding: 0 20px;
+  }
+  
+  .hero-content {
+    grid-template-columns: 1fr;
+    gap: 60px;
+    padding: 0 20px;
+    text-align: center;
+  }
+  
+  .hero-visual {
+    height: 300px;
+  }
+  
+  .element {
+    font-size: 2.5rem;
+  }
+  
+  .container {
+    padding: 0 20px;
+  }
+  
+  .upload-card, .result-card {
+    padding: 30px 20px;
+  }
+  
+  .processing-options {
+    grid-template-columns: 1fr;
   }
   
   .auth-buttons {
-    gap: 12px;
+    flex-direction: column;
+    width: 100%;
   }
   
   .auth-btn {
-    padding: 10px 20px;
-    font-size: 0.9rem;
+    width: 100%;
+  }
+  
+  .dropdown-content {
+    right: 0;
+    left: auto;
+  }
+  
+  .section-header h2 {
+    font-size: 2rem;
+  }
+  
+  .section-header p {
+    font-size: 1rem;
+  }
+  
+  .features {
+    padding: 80px 0 60px;
+  }
+  
+  .features-grid {
+    gap: 30px;
+  }
+  
+  .feature-item {
+    padding: 30px 20px;
   }
 }
 </style>
