@@ -79,6 +79,14 @@ async def root(request: Request):
 @app.get("/api/health")
 async def health_check():
     return {"status": "healthy", "service": "ghibli-ai-backend"}
+
+# 添加启动时的调试信息
+if __name__ == "__main__":
+    import uvicorn
+    port = int(os.environ.get("PORT", 8000))
+    print(f"🚀 Starting server on port {port}")
+    print(f"🔍 Health check available at: /api/health")
+    uvicorn.run(app, host="0.0.0.0", port=port)
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
