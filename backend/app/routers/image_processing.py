@@ -78,17 +78,27 @@ async def get_available_processors():
 async def get_file(filename: str):
     """
     获取处理后的文件（用于图片预览，无需登录）
+    支持包含特殊字符的文件名
     
     Args:
-        filename: 文件名
+        filename: 文件名（可能包含URL编码）
         
     Returns:
         FileResponse: 文件响应
     """
     try:
-        # URL decode the filename
+        # URL decode the filename to handle special characters
         import urllib.parse
-        decoded_filename = urllib.parse.unquote(filename)
+        decoded_filename = urllib.parse.unquote(filename, encoding='utf-8')
+        
+        # Additional decoding for double-encoded filenames
+        try:
+            decoded_filename = urllib.parse.unquote(decoded_filename, encoding='utf-8')
+        except:
+            pass  # If second decode fails, use first result
+        
+        # Log the filename handling for debugging
+        print(f"🔍 [FILE ACCESS] Original: '{filename}' -> Decoded: '{decoded_filename}'")
         
         # Ensure the file path is safe and within the uploads directory
         file_path = os.path.abspath(os.path.join(settings.upload_dir, decoded_filename))
@@ -96,21 +106,41 @@ async def get_file(filename: str):
         
         # Security check to prevent directory traversal
         if not file_path.startswith(uploads_dir):
+            print(f"🚨 [SECURITY] Path traversal attempt: {file_path}")
             raise HTTPException(status_code=400, detail="无效的文件路径")
         
         if not os.path.exists(file_path):
+            print(f"❌ [FILE NOT FOUND] Path: {file_path}")
             raise HTTPException(status_code=404, detail=f"文件不存在: {decoded_filename}")
 
-        # 对于图片预览，直接返回文件
+        # Determine media type based on file extension
+        file_extension = decoded_filename.lower().split('.')[-1] if '.' in decoded_filename else 'png'
+        media_type_map = {
+            'png': 'image/png',
+            'jpg': 'image/jpeg',
+            'jpeg': 'image/jpeg',
+            'webp': 'image/webp',
+            'gif': 'image/gif'
+        }
+        media_type = media_type_map.get(file_extension, 'image/png')
+        
+        print(f"✅ [FILE SERVED] Path: {file_path}, Type: {media_type}")
+        
+        # Return file with appropriate headers for special characters
         return FileResponse(
             file_path,
-            media_type="image/png"
+            media_type=media_type,
+            headers={
+                "Content-Disposition": f"inline; filename*=UTF-8''{urllib.parse.quote(decoded_filename)}"
+            }
         )
+        
     except HTTPException:
         raise
     except Exception as e:
         # Log the error for debugging
-        print(f"Error in get_file: {str(e)}")
+        print(f"🔴 [FILE ERROR] Error in get_file: {str(e)}")
+        print(f"🔴 [FILE ERROR] Original filename: '{filename}'")
         raise HTTPException(status_code=500, detail=f"获取文件时出错: {str(e)}")
 
 @router.get("/download/{filename}")
@@ -121,9 +151,10 @@ async def download_file(
 ):
     """
     下载处理后的文件（需要登录和积分）
+    支持包含特殊字符的文件名
     
     Args:
-        filename: 文件名
+        filename: 文件名（可能包含URL编码）
         current_user: 当前登录用户
         db: 数据库会话
         
@@ -131,9 +162,18 @@ async def download_file(
         FileResponse: 文件下载响应
     """
     try:
-        # URL decode the filename (handle spaces and special characters)
+        # URL decode the filename to handle special characters
         import urllib.parse
-        decoded_filename = urllib.parse.unquote(filename)
+        decoded_filename = urllib.parse.unquote(filename, encoding='utf-8')
+        
+        # Additional decoding for double-encoded filenames
+        try:
+            decoded_filename = urllib.parse.unquote(decoded_filename, encoding='utf-8')
+        except:
+            pass  # If second decode fails, use first result
+        
+        # Log the download request
+        print(f"🔍 [DOWNLOAD] User: {current_user.email}, File: '{decoded_filename}'")
         
         # Ensure the file path is safe and within the uploads directory
         file_path = os.path.abspath(os.path.join(settings.upload_dir, decoded_filename))
@@ -141,9 +181,11 @@ async def download_file(
         
         # Security check to prevent directory traversal
         if not file_path.startswith(uploads_dir):
+            print(f"🚨 [SECURITY] Download path traversal attempt: {file_path}")
             raise HTTPException(status_code=400, detail="无效的文件路径")
         
         if not os.path.exists(file_path):
+            print(f"❌ [DOWNLOAD] File not found: {file_path}")
             raise HTTPException(status_code=404, detail=f"文件不存在: {decoded_filename}")
         
         # 检查积分是否足够
@@ -162,19 +204,37 @@ async def download_file(
                 detail="积分扣除失败"
             )
 
-        # 返回下载文件
-        headers = {"Content-Disposition": f"attachment; filename=\"{decoded_filename}\""}
+        # Determine media type based on file extension
+        file_extension = decoded_filename.lower().split('.')[-1] if '.' in decoded_filename else 'png'
+        media_type_map = {
+            'png': 'image/png',
+            'jpg': 'image/jpeg',
+            'jpeg': 'image/jpeg',
+            'webp': 'image/webp',
+            'gif': 'image/gif'
+        }
+        media_type = media_type_map.get(file_extension, 'image/png')
+        
+        # Create proper headers for download with special character support
+        safe_filename = urllib.parse.quote(decoded_filename)
+        headers = {
+            "Content-Disposition": f"attachment; filename*=UTF-8''{safe_filename}; filename=\"{decoded_filename.encode('ascii', 'ignore').decode('ascii')}\""
+        }
+        
+        print(f"✅ [DOWNLOAD] File served: {file_path}")
         
         return FileResponse(
             file_path,
-            media_type="image/png",
+            media_type=media_type,
             headers=headers
         )
+        
     except HTTPException:
         raise
     except Exception as e:
         # Log the error for debugging
-        print(f"Error in download_file: {str(e)}")
+        print(f"🔴 [DOWNLOAD ERROR] Error in download_file: {str(e)}")
+        print(f"🔴 [DOWNLOAD ERROR] Original filename: '{filename}'")
         raise HTTPException(status_code=500, detail=f"下载文件时出错: {str(e)}")
 
 @router.post("/process", response_model=ImageProcessResponse)

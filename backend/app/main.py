@@ -1,4 +1,4 @@
-from fastapi import FastAPI, Request
+  from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from app.routers import image_processing, auth
@@ -69,11 +69,52 @@ app.add_middleware(
 app.include_router(image_processing.router, prefix="/api", tags=["图片处理"])
 app.include_router(auth.router, prefix="/api/auth", tags=["用户认证"])
 
-# 创建上传目录
-os.makedirs("./uploads", exist_ok=True)
+# 初始化存储系统
+from app.utils.filename_handler import filename_handler
+import logging
+
+# 配置日志
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+
+# 创建上传目录并设置权限
+upload_dir = "./uploads"
+try:
+    os.makedirs(upload_dir, exist_ok=True)
+    # 设置目录权限为755
+    os.chmod(upload_dir, 0o755)
+    print(f"✅ 上传目录已准备就绪: {upload_dir}")
+except Exception as e:
+    print(f"❌ 上传目录创建失败: {str(e)}")
 
 # 添加静态文件服务，用于直接访问图片
+# 注意：这里使用 /api/uploads 路径，但在路由中我们使用 /api/files
 app.mount("/api/uploads", StaticFiles(directory="uploads"), name="uploads")
+
+# 添加启动事件处理
+@app.on_event("startup")
+async def startup_event():
+    """应用启动时的初始化"""
+    print("🚀 Ghibli AI Backend 启动中...")
+    
+    # 检查上传目录状态
+    if os.path.exists(upload_dir) and os.access(upload_dir, os.W_OK):
+        print(f"✅ 上传目录可写: {upload_dir}")
+    else:
+        print(f"⚠️ 上传目录权限问题: {upload_dir}")
+    
+    # 记录文件名处理器状态
+    print("✅ 文件名处理器已初始化")
+    print("✅ 支持特殊字符和多语言文件名")
+    
+    print("🎉 系统启动完成!")
+
+@app.on_event("shutdown")
+async def shutdown_event():
+    """应用关闭时的清理"""
+    print("👋 Ghibli AI Backend 正在关闭...")
 
 @app.api_route("/", methods=["GET", "HEAD"])
 async def root(request: Request):
