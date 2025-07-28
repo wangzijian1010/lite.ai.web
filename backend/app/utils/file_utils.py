@@ -59,16 +59,36 @@ def save_processed_image(image_data: bytes, original_filename: str) -> str:
     Returns:
         str: 保存的文件路径
     """
-    # 生成处理后文件的文件名
-    base_name = os.path.splitext(original_filename)[0]
-    processed_filename = f"{base_name}_processed_{uuid.uuid4()}.png"
-    file_path = os.path.join(settings.upload_dir, processed_filename)
-    
-    # 保存文件
-    with open(file_path, "wb") as buffer:
-        buffer.write(image_data)
-    
-    return file_path
+    try:
+        # 从原始文件名中提取基本名称，但不使用特殊字符
+        # 只保留字母、数字和下划线，避免URL和文件系统问题
+        import re
+        base_name = os.path.splitext(original_filename)[0]
+        safe_base_name = re.sub(r'[^\w]', '_', base_name)
+        
+        # 生成处理后文件的文件名，使用UUID确保唯一性
+        unique_id = str(uuid.uuid4())
+        processed_filename = f"{safe_base_name}_processed_{unique_id}.png"
+        file_path = os.path.join(settings.upload_dir, processed_filename)
+        
+        # 确保上传目录存在
+        os.makedirs(settings.upload_dir, exist_ok=True)
+        
+        # 保存文件
+        with open(file_path, "wb") as buffer:
+            buffer.write(image_data)
+        
+        return file_path
+    except Exception as e:
+        print(f"Error saving processed image: {str(e)}")
+        # 如果出错，使用纯UUID作为文件名
+        fallback_filename = f"processed_{uuid.uuid4()}.png"
+        fallback_path = os.path.join(settings.upload_dir, fallback_filename)
+        
+        with open(fallback_path, "wb") as buffer:
+            buffer.write(image_data)
+        
+        return fallback_path
 
 def get_file_url(file_path: str) -> str:
     """

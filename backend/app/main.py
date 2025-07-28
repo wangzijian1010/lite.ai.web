@@ -21,25 +21,34 @@ async def log_requests(request, call_next):
     import time
     start_time = time.time()
     
-    # 记录请求详情
-    print(f"🔵 [REQUEST] {request.method} {request.url}")
-    print(f"🔵 [HEADERS] {dict(request.headers)}")
-    
-    # 如果是POST请求，尝试记录body（小心处理）
-    if request.method == "POST":
-        try:
-            body = await request.body()
-            if len(body) < 1000:  # 只记录小的body
-                print(f"🔵 [BODY] {body.decode('utf-8', errors='ignore')}")
-        except Exception as e:
-            print(f"🔵 [BODY ERROR] {e}")
-    
-    response = await call_next(request)
-    
-    process_time = time.time() - start_time
-    print(f"🟢 [RESPONSE] Status: {response.status_code}, Time: {process_time:.3f}s")
-    
-    return response
+    try:
+        # 记录请求详情
+        print(f"🔵 [REQUEST] {request.method} {request.url}")
+        print(f"🔵 [HEADERS] {dict(request.headers)}")
+        
+        # 如果是POST请求，尝试记录body（小心处理）
+        if request.method == "POST":
+            try:
+                body = await request.body()
+                if len(body) < 1000:  # 只记录小的body
+                    print(f"🔵 [BODY] {body.decode('utf-8', errors='ignore')}")
+            except Exception as e:
+                print(f"🔵 [BODY ERROR] {e}")
+        
+        # 处理请求
+        response = await call_next(request)
+        
+        # 记录响应时间
+        process_time = time.time() - start_time
+        print(f"🟢 [RESPONSE] Status: {response.status_code}, Time: {process_time:.3f}s")
+        
+        return response
+    except Exception as e:
+        # 记录中间件错误
+        process_time = time.time() - start_time
+        print(f"🔴 [MIDDLEWARE ERROR] {str(e)}, Time: {process_time:.3f}s")
+        # 重新抛出异常，让FastAPI的异常处理器处理
+        raise
 
 app.add_middleware(
     CORSMiddleware,

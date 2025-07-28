@@ -85,16 +85,33 @@ async def get_file(filename: str):
     Returns:
         FileResponse: 文件响应
     """
-    file_path = os.path.join(settings.upload_dir, filename)
-    
-    if not os.path.exists(file_path):
-        raise HTTPException(status_code=404, detail="文件不存在")
+    try:
+        # URL decode the filename
+        import urllib.parse
+        decoded_filename = urllib.parse.unquote(filename)
+        
+        # Ensure the file path is safe and within the uploads directory
+        file_path = os.path.abspath(os.path.join(settings.upload_dir, decoded_filename))
+        uploads_dir = os.path.abspath(settings.upload_dir)
+        
+        # Security check to prevent directory traversal
+        if not file_path.startswith(uploads_dir):
+            raise HTTPException(status_code=400, detail="无效的文件路径")
+        
+        if not os.path.exists(file_path):
+            raise HTTPException(status_code=404, detail=f"文件不存在: {decoded_filename}")
 
-    # 对于图片预览，直接返回文件
-    return FileResponse(
-        file_path,
-        media_type="image/png"
-    )
+        # 对于图片预览，直接返回文件
+        return FileResponse(
+            file_path,
+            media_type="image/png"
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        # Log the error for debugging
+        print(f"Error in get_file: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"获取文件时出错: {str(e)}")
 
 @router.get("/download/{filename}")
 async def download_file(
@@ -113,35 +130,52 @@ async def download_file(
     Returns:
         FileResponse: 文件下载响应
     """
-    file_path = os.path.join(settings.upload_dir, filename)
-    
-    if not os.path.exists(file_path):
-        raise HTTPException(status_code=404, detail="文件不存在")
-    
-    # 检查积分是否足够
-    required_credits = 10
-    if not check_user_credits(current_user, required_credits):
-        raise HTTPException(
-            status_code=400, 
-            detail=f"积分不足，当前积分：{current_user.credits}，需要积分：{required_credits}"
-        )
-    
-    # 扣除积分
-    success = deduct_user_credits(db, current_user, required_credits)
-    if not success:
-        raise HTTPException(
-            status_code=400,
-            detail="积分扣除失败"
-        )
+    try:
+        # URL decode the filename (handle spaces and special characters)
+        import urllib.parse
+        decoded_filename = urllib.parse.unquote(filename)
+        
+        # Ensure the file path is safe and within the uploads directory
+        file_path = os.path.abspath(os.path.join(settings.upload_dir, decoded_filename))
+        uploads_dir = os.path.abspath(settings.upload_dir)
+        
+        # Security check to prevent directory traversal
+        if not file_path.startswith(uploads_dir):
+            raise HTTPException(status_code=400, detail="无效的文件路径")
+        
+        if not os.path.exists(file_path):
+            raise HTTPException(status_code=404, detail=f"文件不存在: {decoded_filename}")
+        
+        # 检查积分是否足够
+        required_credits = 10
+        if not check_user_credits(current_user, required_credits):
+            raise HTTPException(
+                status_code=400, 
+                detail=f"积分不足，当前积分：{current_user.credits}，需要积分：{required_credits}"
+            )
+        
+        # 扣除积分
+        success = deduct_user_credits(db, current_user, required_credits)
+        if not success:
+            raise HTTPException(
+                status_code=400,
+                detail="积分扣除失败"
+            )
 
-    # 返回下载文件
-    headers = {"Content-Disposition": f"attachment; filename={filename}"}
-    
-    return FileResponse(
-        file_path,
-        media_type="image/png",
-        headers=headers
-    )
+        # 返回下载文件
+        headers = {"Content-Disposition": f"attachment; filename=\"{decoded_filename}\""}
+        
+        return FileResponse(
+            file_path,
+            media_type="image/png",
+            headers=headers
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        # Log the error for debugging
+        print(f"Error in download_file: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"下载文件时出错: {str(e)}")
 
 @router.post("/process", response_model=ImageProcessResponse)
 async def process_image(
