@@ -7,14 +7,16 @@
     "dev": "vite",
     "build": "vite build",
     "build-with-types": "vue-tsc && vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "start": "npm run build && npx serve dist -p $PORT"
   },
   "dependencies": {
     "@vueuse/core": "^10.5.0",
     "axios": "^1.6.0",
     "pinia": "^2.1.7",
     "vue": "^3.4.0",
-    "vue-router": "^4.2.5"
+    "vue-router": "^4.2.5",
+    "serve": "^14.2.4"
   },
   "devDependencies": {
     "@types/node": "^20.8.10",
