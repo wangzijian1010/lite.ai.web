@@ -1,0 +1,20 @@
+{
+  "path": "f:\\lite.ai.web\\frontend",
+  "desc": "This is a Ghibli AI frontend project - a Vue.js application for converting photos to Ghibli animation style. Features include user authentication, image upload and processing, credit system, and responsive design with beautiful UI. Now configured to connect to the deployed backend service.",
+  "id": "c4a74558d09e4f0c9732bc18000db597",
+  "data": {
+    "spaceKey": "c4a74558d09e4f0c9732bc18000db597",
+    "connections": {
+      "webIDE": "https://c4a74558d09e4f0c9732bc18000db597.ap-singapore.cloudstudio.club",
+      "preview": "https://c4a74558d09e4f0c9732bc18000db597--{port}.ap-singapore.cloudstudio.club",
+      "api": "https://c4a74558d09e4f0c9732bc18000db597--api.ap-singapore.cloudstudio.club",
+      "pty": "https://c4a74558d09e4f0c9732bc18000db597--pty.ap-singapore.cloudstudio.club"
+    }
+  },
+  "config": {
+    "api": "https://c4a74558d09e4f0c9732bc18000db597--api.ap-singapore.cloudstudio.club",
+    "pty": "https://c4a74558d09e4f0c9732bc18000db597--pty.ap-singapore.cloudstudio.club",
+    "region": "ap-shanghai",
+    "spaceKey": "c4a74558d09e4f0c9732bc18000db597"
+  }
+}

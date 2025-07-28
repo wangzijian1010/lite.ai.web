@@ -82,7 +82,7 @@ const downloadImage = async () => {
     }
 
     // 调用后端的下载接口（这会扣除积分）
-    const response = await axios.get(`${API_BASE_URL}/api/files/${filename}?download=true`, {
+    const response = await axios.get(`${API_BASE_URL}/api/download/${filename}`, {
       responseType: 'blob',
       headers: {
         'Authorization': `Bearer ${authStore.token}`

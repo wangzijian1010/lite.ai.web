@@ -25,35 +25,7 @@
           </div>
         </div>
         
-        <!-- 验证码（注册时显示） -->
-        <div v-if="!isLogin" class="input-group">
-          <label for="verification_code">邮箱验证码</label>
-          <div class="verification-input-group">
-            <input
-              id="verification_code"
-              v-model="form.verification_code"
-              type="text"
-              :required="!isLogin"
-              placeholder="请输入6位验证码"
-              class="auth-input verification-input"
-              maxlength="6"
-              :disabled="!form.email"
-            />
-            <button
-              type="button"
-              @click="sendVerificationCode"
-              :disabled="!form.email || sendingCode || countdown > 0"
-              class="send-code-btn"
-            >
-              <span v-if="!sendingCode && countdown === 0">发送验证码</span>
-              <span v-else-if="sendingCode">发送中...</span>
-              <span v-else>{{ countdown }}s后重试</span>
-            </button>
-          </div>
-          <div v-if="codeStatus" class="code-status" :class="codeStatus.type">
-            {{ codeStatus.message }}
-          </div>
-        </div>
+        <!-- 验证码部分已移除，使用简化注册 -->
         
         <!-- 用户名 -->
         <div class="input-group">
@@ -236,15 +208,8 @@ const handleSubmit = async () => {
     if (isLogin.value) {
       await authStore.login(form.username, form.password)
     } else {
-      // 注册前先验证验证码
-      if (!emailVerified.value) {
-        const verified = await verifyCode()
-        if (!verified) {
-          return
-        }
-      }
-      
-      await authStore.register(form.username, form.email, form.password, form.verification_code)
+      // 使用简单注册，无需验证码
+      await authStore.registerSimple(form.username, form.email, form.password)
     }
     
     emit('success')

@@ -6,7 +6,7 @@ from sqlalchemy import and_
 from app.database import get_db
 from app.models.models import User, EmailVerification, EmailSendLog
 from app.models.schemas import (
-    UserCreate, UserLogin, UserResponse, Token, 
+    UserCreate, UserCreateSimple, UserLogin, UserResponse, Token, 
     SendVerificationCodeRequest, VerifyCodeRequest, SendVerificationCodeResponse,
     CreditResponse, CreditDeductionRequest
 )
@@ -16,6 +16,11 @@ from app.utils.credits import check_user_credits, deduct_user_credits
 from app.config import settings
 
 router = APIRouter()
+
+@router.get("/test")
+async def test_endpoint():
+    print("🟢 [TEST] Test endpoint called successfully!")
+    return {"status": "ok", "message": "Backend is working", "timestamp": "2024-01-25"}
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="api/auth/token")
 
 def get_user_by_username(db: Session, username: str):
@@ -171,30 +176,48 @@ async def verify_code(request: VerifyCodeRequest, db: Session = Depends(get_db))
 
 @router.post("/register", response_model=UserResponse)
 async def register_user(user: UserCreate, db: Session = Depends(get_db)):
-    """用户注册（需要验证码）"""
-    # 验证邮箱验证码
-    verification = db.query(EmailVerification).filter(
-        and_(
-            EmailVerification.email == user.email,
-            EmailVerification.code == user.verification_code,
-            EmailVerification.expires_at > datetime.utcnow(),
-            EmailVerification.used == True  # 必须是已验证过的验证码
-        )
-    ).first()
+    print(f"🟡 [REGISTER] Starting registration for email: {user.email}")
     
-    if not verification:
-        raise HTTPException(
-            status_code=400,
-            detail="验证码无效或未验证，请先验证邮箱"
+    try:
+        # 检查用户是否已存在
+        print(f"🟡 [REGISTER] Checking if user exists...")
+        db_user = db.query(User).filter(User.email == user.email).first()
+        if db_user:
+            print(f"🔴 [REGISTER] User already exists: {user.email}")
+            raise HTTPException(status_code=400, detail="Email already registered")
+        
+        print(f"🟡 [REGISTER] Creating new user...")
+        # 创建新用户
+        hashed_password = get_password_hash(user.password)
+        db_user = User(
+            email=user.email,
+            username=user.username,
+            hashed_password=hashed_password,
+            credits=50  # 新用户默认50积分
         )
-    
-    # 检查用户名是否已存在
-    db_user = get_user_by_username(db, username=user.username)
-    if db_user:
-        raise HTTPException(
-            status_code=400,
-            detail="用户名已被注册"
+        
+        print(f"🟡 [REGISTER] Adding user to database...")
+        db.add(db_user)
+        db.commit()
+        db.refresh(db_user)
+        
+        print(f"🟢 [REGISTER] User created successfully: ID={db_user.id}, Email={db_user.email}")
+        
+        return UserResponse(
+            id=db_user.id,
+            email=db_user.email,
+            username=db_user.username,
+            credits=db_user.credits,
+            email_verified=db_user.email_verified
         )
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"🔴 [REGISTER] Unexpected error: {str(e)}")
+        print(f"🔴 [REGISTER] Error type: {type(e)}")
+        import traceback
+        print(f"🔴 [REGISTER] Traceback: {traceback.format_exc()}")
+        raise HTTPException(status_code=500, detail=f"Registration failed: {str(e)}")
     
     # 再次检查邮箱是否已被注册（双保险）
     db_user = get_user_by_email(db, email=user.email)
@@ -217,6 +240,40 @@ async def register_user(user: UserCreate, db: Session = Depends(get_db)):
     # 删除使用过的验证码记录
     db.delete(verification)
     
+    db.commit()
+    db.refresh(db_user)
+    return db_user
+
+@router.post("/register-simple", response_model=UserResponse)
+async def register_user_simple(user: UserCreateSimple, db: Session = Depends(get_db)):
+    """简单用户注册（无需验证码，用于测试）"""
+    
+    # 检查用户名是否已存在
+    db_user = get_user_by_username(db, username=user.username)
+    if db_user:
+        raise HTTPException(
+            status_code=400,
+            detail="用户名已被注册"
+        )
+    
+    # 检查邮箱是否已被注册
+    db_user = get_user_by_email(db, email=user.email)
+    if db_user:
+        raise HTTPException(
+            status_code=400,
+            detail="邮箱已被注册"
+        )
+    
+    # 创建用户（跳过邮箱验证）
+    hashed_password = get_password_hash(user.password)
+    db_user = User(
+        username=user.username,
+        email=user.email,
+        hashed_password=hashed_password,
+        email_verified=True,  # 直接设为已验证
+        credits=100  # 给新用户100积分用于测试
+    )
+    db.add(db_user)
     db.commit()
     db.refresh(db_user)
     return db_user

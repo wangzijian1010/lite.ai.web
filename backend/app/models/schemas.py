@@ -51,6 +51,11 @@ class UserCreate(BaseModel):
     password: str
     verification_code: str  # 邮箱验证码
 
+class UserCreateSimple(BaseModel):
+    username: str
+    email: EmailStr
+    password: str
+
 class UserLogin(BaseModel):
     username: str
     password: str

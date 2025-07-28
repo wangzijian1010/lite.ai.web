@@ -81,7 +81,7 @@ def get_file_url(file_path: str) -> str:
         str: 文件访问URL
     """
     filename = os.path.basename(file_path)
-    return f"/api/files/{filename}"
+    return f"/api/uploads/{filename}"
 
 def cleanup_file(file_path: str) -> bool:
     """
