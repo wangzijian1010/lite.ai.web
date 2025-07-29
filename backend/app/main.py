@@ -2,14 +2,11 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from app.routers import image_processing, auth
-from app.database import engine
+from app.database import engine, create_tables, check_db_connection
 from app.models import models
 import os
 import logging
 import time
-
-# Create all database tables
-models.Base.metadata.create_all(bind=engine)
 
 app = FastAPI(
     title="Ghibli AI Backend",
@@ -97,6 +94,18 @@ async def startup_event():
     """Initialization when application starts"""
     print("🚀 Ghibli AI Backend starting...")
     
+    # 检查数据库连接
+    if check_db_connection():
+        print("✅ 数据库连接成功")
+        # 创建数据库表
+        try:
+            create_tables()
+            print("✅ 数据库表创建完成")
+        except Exception as e:
+            print(f"⚠️ 数据库表创建警告: {e}")
+    else:
+        print("❌ 数据库连接失败，请检查配置")
+    
     # Check upload directory status
     if os.path.exists(upload_dir) and os.access(upload_dir, os.W_OK):
         print(f"✅ Upload directory writable: {upload_dir}")
@@ -124,9 +133,15 @@ async def root(request: Request):
         "docs": "/docs"
     }
 
-@app.get("/api/health")
-async def health_check():
-    return {"status": "healthy", "service": "ghibli-ai-backend"}
+# @app.get("/api/health")
+# async def health_check():
+#     """健康检查端点"""
+#     db_status = check_db_connection()
+#     return {
+#         "status": "healthy" if db_status else "unhealthy",
+#         "service": "ghibli-ai-backend",
+#         "database": "connected" if db_status else "disconnected"
+#     }
 
 # Add startup debug information
 if __name__ == "__main__":

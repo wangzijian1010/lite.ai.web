@@ -1,8 +1,17 @@
+import os
 from pydantic_settings import BaseSettings
 from typing import List
 
 class Settings(BaseSettings):
-    database_url: str = "sqlite:///./app.db"
+    # PostgreSQL数据库连接配置
+    database_url: str = os.getenv("DATABASE_URL", "sqlite:///./app.db")
+    
+    # 数据库连接池配置
+    db_pool_size: int = int(os.getenv("DB_POOL_SIZE", "10"))
+    db_max_overflow: int = int(os.getenv("DB_MAX_OVERFLOW", "20"))
+    db_pool_timeout: int = int(os.getenv("DB_POOL_TIMEOUT", "30"))
+    db_pool_recycle: int = int(os.getenv("DB_POOL_RECYCLE", "3600"))
+    db_pool_pre_ping: bool = True
     secret_key: str = "your-secret-key-here-change-in-production"
     algorithm: str = "HS256"
     access_token_expire_minutes: int = 30
