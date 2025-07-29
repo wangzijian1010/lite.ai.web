@@ -133,15 +133,15 @@ async def root(request: Request):
         "docs": "/docs"
     }
 
-# @app.get("/api/health")
-# async def health_check():
-#     """健康检查端点"""
-#     db_status = check_db_connection()
-#     return {
-#         "status": "healthy" if db_status else "unhealthy",
-#         "service": "ghibli-ai-backend",
-#         "database": "connected" if db_status else "disconnected"
-#     }
+@app.get("/api/health")
+async def health_check():
+    """健康检查端点"""
+    db_status = check_db_connection()
+    return {
+        "status": "healthy" if db_status else "unhealthy",
+        "service": "ghibli-ai-backend",
+        "database": "connected" if db_status else "disconnected"
+    }
 
 # Add startup debug information
 if __name__ == "__main__":
