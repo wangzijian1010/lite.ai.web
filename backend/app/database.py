@@ -81,7 +81,7 @@ def check_db_connection():
     """检查数据库连接健康状态"""
     try:
         with engine.connect() as connection:
-            connection.execute("SELECT 1")
+            connection.execute(text("SELECT 1"))
         return True
     except Exception as e:
         logging.error(f"数据库连接失败: {e}")
