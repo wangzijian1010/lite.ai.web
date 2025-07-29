@@ -94,13 +94,60 @@ async def startup_event():
     """Initialization when application starts"""
     print("🚀 Ghibli AI Backend starting...")
     
+    # 详细的数据库连接检查
+    from app.config import settings
+    from sqlalchemy import text
+    
+    print(f"🔍 数据库配置检查:")
+    print(f"   DATABASE_URL: {settings.database_url[:50]}...")
+    print(f"   数据库类型: {'PostgreSQL' if 'postgresql' in settings.database_url else 'SQLite'}")
+    
     # 检查数据库连接
     if check_db_connection():
         print("✅ 数据库连接成功")
+        
+        # 获取数据库详细信息
+        try:
+            with engine.connect() as conn:
+                if 'postgresql' in settings.database_url:
+                    # PostgreSQL特定查询
+                    result = conn.execute(text("SELECT version()"))
+                    version = result.fetchone()[0]
+                    print(f"   PostgreSQL版本: {version.split(',')[0]}")
+                    
+                    result = conn.execute(text("SELECT current_database()"))
+                    db_name = result.fetchone()[0]
+                    print(f"   当前数据库: {db_name}")
+                    
+                    # 检查表
+                    result = conn.execute(text("""
+                        SELECT tablename FROM pg_tables 
+                        WHERE schemaname = 'public'
+                    """))
+                    tables = [row[0] for row in result.fetchall()]
+                    print(f"   现有表: {tables}")
+                else:
+                    # SQLite查询
+                    result = conn.execute(text("SELECT name FROM sqlite_master WHERE type='table'"))
+                    tables = [row[0] for row in result.fetchall()]
+                    print(f"   现有表: {tables}")
+        except Exception as e:
+            print(f"⚠️ 获取数据库信息失败: {e}")
+        
         # 创建数据库表
         try:
             create_tables()
             print("✅ 数据库表创建完成")
+            
+            # 验证users表
+            with engine.connect() as conn:
+                if 'postgresql' in settings.database_url:
+                    result = conn.execute(text("SELECT COUNT(*) FROM users"))
+                else:
+                    result = conn.execute(text("SELECT COUNT(*) FROM users"))
+                count = result.fetchone()[0]
+                print(f"   users表记录数: {count}")
+                
         except Exception as e:
             print(f"⚠️ 数据库表创建警告: {e}")
     else:
