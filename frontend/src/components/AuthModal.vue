@@ -37,7 +37,6 @@
               placeholder="请输入6位验证码"
               maxlength="6"
               class="auth-input verification-input"
-              :disabled="!emailVerified"
             />
             <button
               type="button"
@@ -57,8 +56,8 @@
           </div>
           
           <!-- 邮箱验证状态 -->
-          <div v-if="!isLogin && emailVerified" class="verification-status verified">
-            ✓ 验证码已发送，请查收邮件
+          <div v-if="!isLogin && codeStatus && codeStatus.type === 'success'" class="verification-status verified">
+            ✓ 验证码已发送，请查收邮件并输入验证码
           </div>
         </div>
         
@@ -217,22 +216,6 @@ const startCountdown = (seconds: number) => {
       clearInterval(timer)
     }
   }, 1000)
-}
-
-// 验证验证码
-const verifyCode = async () => {
-  try {
-    const response = await authStore.verifyCode(form.email, form.verification_code)
-    if (response.success) {
-      emailVerified.value = true
-      codeStatus.value = { type: 'success', message: '验证码验证成功' }
-      return true
-    }
-  } catch (err: any) {
-    const errorMsg = err.response?.data?.detail || err.message || '验证码验证失败'
-    codeStatus.value = { type: 'error', message: errorMsg }
-    return false
-  }
 }
 
 const handleSubmit = async () => {
