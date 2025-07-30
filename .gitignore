@@ -4,6 +4,7 @@
 .env.development
 .env.production
 .env.test
+.env
 
 # Frontend (Node.js/Vue.js)
 frontend/node_modules/
