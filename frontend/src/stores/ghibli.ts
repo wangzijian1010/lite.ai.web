@@ -59,7 +59,7 @@ export const useGhibliStore = defineStore('ghibli', {
       this.modelsLoading = true
       try {
         const response = await axios.get(`${API_BASE_URL}/api/comfyui-models`, {
-          timeout: 15000
+          timeout: 300000 // 5分钟超时
         })
         
         if (response.data.success) {
@@ -121,7 +121,7 @@ export const useGhibliStore = defineStore('ghibli', {
             headers: {
               'Content-Type': 'multipart/form-data'
             },
-            timeout: 10000 // 启动任务只需要很短时间
+            timeout: 60000 // 1分钟超时用于启动任务
           }
         )
         
@@ -192,7 +192,7 @@ export const useGhibliStore = defineStore('ghibli', {
             headers: {
               'Content-Type': 'multipart/form-data'
             },
-            timeout: 10000 // 启动任务只需要很短时间
+            timeout: 60000 // 1分钟超时用于启动任务
           }
         )
         
@@ -249,7 +249,7 @@ export const useGhibliStore = defineStore('ghibli', {
         try {
           const response = await axios.get<ProgressResponse>(
             `${API_BASE_URL}/api/progress/${taskId}`,
-            { timeout: 5000 }
+            { timeout: 30000 } // 30秒超时用于进度查询
           )
           
           if (response.data.success) {
@@ -310,7 +310,7 @@ export const useGhibliStore = defineStore('ghibli', {
             headers: {
               'Content-Type': 'multipart/form-data'
             },
-            timeout: 120000 // 2分钟超时，因为文生图可能较慢
+            timeout: 600000 // 10分钟超时，因为文生图可能较慢
           }
         )
         
@@ -367,7 +367,7 @@ export const useGhibliStore = defineStore('ghibli', {
             headers: {
               'Content-Type': 'multipart/form-data'
             },
-            timeout: 30000
+            timeout: 600000 // 10分钟超时，因为图像处理可能较慢
           }
         )
         
