@@ -40,12 +40,13 @@ class Settings(BaseSettings):
     upscale_api_timeout: int = 30
     
     # ComfyUI 配置
-    comfyui_server_address: str = "127.0.0.1:8188"
-    comfyui_workflow_json: str = "workflow/text_to_image_workflow.json"  # 保留兼容性
-    comfyui_text_to_image_workflow: str = "workflow/text_to_image_workflow.json"
-    comfyui_upscale_workflow: str = "workflow/upscale_workflow.json"
-    comfyui_input_dir: str = "./comfyui_temp"  # ComfyUI输入文件目录
-    comfyui_timeout: int = 120
+    comfyui_server_address: str = os.getenv("COMFYUI_SERVER_ADDRESS", "127.0.0.1:8188")
+    comfyui_token: str = os.getenv("COMFYUI_TOKEN", "")
+    comfyui_workflow_json: str = os.getenv("COMFYUI_TEXT_TO_IMAGE_WORKFLOW", "workflow/text_to_image_workflow.json")  # 保留兼容性
+    comfyui_text_to_image_workflow: str = os.getenv("COMFYUI_TEXT_TO_IMAGE_WORKFLOW", "workflow/text_to_image_workflow.json")
+    comfyui_upscale_workflow: str = os.getenv("COMFYUI_UPSCALE_WORKFLOW", "workflow/upscale_workflow.json")
+    comfyui_input_dir: str = os.getenv("COMFYUI_INPUT_DIR", "./comfyui_temp")  # ComfyUI输入文件目录
+    comfyui_timeout: int = int(os.getenv("COMFYUI_TIMEOUT", "120"))
     
     @property
     def allowed_extensions_list(self) -> List[str]:

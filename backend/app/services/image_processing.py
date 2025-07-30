@@ -71,17 +71,248 @@ class GrayscaleProcessor(ImageProcessor):
         return "将彩色图像转换为灰度图像"
 
 class GhibliStyleProcessor(ImageProcessor):
-    """吉卜力风格处理器 (模拟实现)"""
+    """吉卜力风格处理器 - 使用ComfyUI和专门的ghibli.json工作流"""
     
     def process(self, image: Image.Image, parameters: Dict[str, Any] = None, task_id: str = None) -> Image.Image:
         """
-        模拟吉卜力风格转换
-        实际项目中这里会调用真实的AI API
+        使用ComfyUI和ghibli.json工作流将图像转换为吉卜力风格
         """
-        # 这里只是简单返回原图作为演示
-        # 在实际项目中，这里会调用外部AI服务
+        try:
+            # 调用 ComfyUI API
+            image_data = self._call_comfyui_ghibli_api(image, task_id)
+            
+            # 将图像数据转换为 PIL Image
+            return Image.open(io.BytesIO(image_data))
+            
+        except Exception as e:
+            print(f"ComfyUI 吉卜力风格API调用失败: {e}")
+            # 降级方案：使用简单的滤镜效果
+            return self._fallback_ghibli_style(image)
+    
+    def _call_comfyui_ghibli_api(self, image: Image.Image, task_id: str = None) -> bytes:
+        """
+        调用 ComfyUI API 进行吉卜力风格转换
+        """
+        import json
+        import uuid
+        import tempfile
+        import os
+        from urllib.parse import urlencode
         
-        # 添加一些简单的滤镜效果来模拟处理
+        server_address = settings.comfyui_server_address
+        client_id = str(uuid.uuid4())
+        
+        # 1. 保存输入图像到临时文件
+        temp_image_path = self._save_temp_image(image)
+        
+        try:
+            # 2. 上传图像到ComfyUI服务器
+            uploaded_filename = self._upload_image_to_comfyui(temp_image_path, server_address)
+            
+            # 3. 加载吉卜力工作流模板
+            workflow = self._load_ghibli_workflow_template()
+            if not workflow:
+                raise Exception("无法加载 ComfyUI 吉卜力工作流模板")
+            
+            # 4. 更新工作流参数（使用上传后的文件名）
+            workflow = self._update_ghibli_workflow_with_uploaded_image(workflow, uploaded_filename)
+            
+            # 5. 提交到队列
+            prompt_data = {"prompt": workflow, "client_id": client_id}
+            data = json.dumps(prompt_data).encode('utf-8')
+            
+            # 准备请求头，如果有TOKEN则添加认证
+            headers = {'Content-Type': 'application/json'}
+            if settings.comfyui_token:
+                headers['Authorization'] = f'Bearer {settings.comfyui_token}'
+            
+            response = requests.post(
+                f"http://{server_address}/prompt", 
+                data=data,
+                headers=headers,
+                timeout=settings.comfyui_timeout
+            )
+            result = response.json()
+            prompt_id = result['prompt_id']
+            
+            print(f"ComfyUI 吉卜力风格任务ID: {prompt_id}")
+            
+            # 6. 等待完成
+            history = self._wait_for_completion(server_address, prompt_id, task_id)
+            
+            # 7. 获取生成的图像（优先获取节点136的最终结果）
+            for node_id in ['136', '8']:  # 先尝试节点136，再尝试节点8
+                if node_id in history['outputs']:
+                    node_output = history['outputs'][node_id]
+                    if 'images' in node_output:
+                        for image_info in node_output['images']:
+                            print(f"找到吉卜力风格图像(节点{node_id}): {image_info}")
+                            image_data = self._get_image(
+                                server_address, image_info['filename'], 
+                                image_info['subfolder'], image_info['type']
+                            )
+                            return image_data
+            
+            raise Exception("未能从 ComfyUI 获取吉卜力风格图像")
+            
+        finally:
+            # 清理临时文件
+            if os.path.exists(temp_image_path):
+                os.remove(temp_image_path)
+    
+    def _upload_image_to_comfyui(self, image_path: str, server_address: str) -> str:
+        """上传图像到ComfyUI服务器"""
+        # 准备认证头
+        headers = {}
+        if settings.comfyui_token:
+            headers['Authorization'] = f'Bearer {settings.comfyui_token}'
+        
+        with open(image_path, 'rb') as f:
+            files = {'image': f}
+            response = requests.post(f"http://{server_address}/upload/image", files=files, headers=headers)
+            if response.status_code == 200:
+                result = response.json()
+                return result['name']  # 返回上传后的文件名
+            else:
+                raise Exception(f"图像上传失败: {response.status_code}")
+    
+    def _save_temp_image(self, image: Image.Image) -> str:
+        """保存图像到指定目录"""
+        import tempfile
+        import os
+        import uuid
+        
+        # 生成唯一文件名
+        filename = f"ghibli_input_{uuid.uuid4().hex[:8]}.png"
+        
+        # 使用配置的目录
+        input_dir = settings.comfyui_input_dir
+        
+        # 确保目录存在
+        os.makedirs(input_dir, exist_ok=True)
+        
+        # 保存文件
+        file_path = os.path.join(input_dir, filename)
+        image.save(file_path, format='PNG')
+        
+        return file_path
+    
+    def _load_ghibli_workflow_template(self) -> Dict:
+        """加载吉卜力工作流模板"""
+        import json
+        import os
+        
+        json_file_path = os.path.join(os.getcwd(), "workflow/ghibli.json")
+        
+        try:
+            with open(json_file_path, 'r', encoding='utf-8') as f:
+                workflow = json.load(f)
+            return workflow
+        except FileNotFoundError:
+            print(f"找不到吉卜力工作流文件: {json_file_path}")
+            return None
+        except json.JSONDecodeError:
+            print(f"JSON文件格式错误: {json_file_path}")
+            return None
+    
+    def _update_ghibli_workflow_with_uploaded_image(self, workflow: Dict, uploaded_filename: str) -> Dict:
+        """使用上传后的文件名更新吉卜力工作流"""
+        if not workflow:
+            return None
+        
+        # 根据ghibli.json，LoadImage节点是192
+        if "192" in workflow:
+            if "inputs" not in workflow["192"]:
+                workflow["192"]["inputs"] = {}
+            workflow["192"]["inputs"]["image"] = uploaded_filename
+            print(f"更新LoadImage节点192的图像路径为: {uploaded_filename}")
+        else:
+            print("警告: 在吉卜力工作流中未找到LoadImage节点192")
+        
+        # 删除对比图节点213和212，只保留最终结果
+        if "213" in workflow:
+            del workflow["213"]
+            print("删除对比图保存节点213")
+        
+        if "212" in workflow:
+            del workflow["212"]
+            print("删除图像拼接节点212")
+        
+        # 设置输出文件名前缀
+        if "136" in workflow:
+            workflow["136"]["inputs"]["filename_prefix"] = f"ghibli_{uploaded_filename.split('.')[0]}"
+        
+        return workflow
+    
+    def _wait_for_completion(self, server_address: str, prompt_id: str, task_id: str = None) -> Dict:
+        """等待图像生成完成"""
+        print("正在等待 ComfyUI 吉卜力风格转换...")
+        max_wait_time = settings.comfyui_timeout
+        start_time = time.time()
+        
+        # 导入task_progress（需要在循环外访问）
+        from app.routers.image_processing import task_progress
+        
+        count = 0
+        while time.time() - start_time < max_wait_time:
+            try:
+                # 准备认证头
+                headers = {}
+                if settings.comfyui_token:
+                    headers['Authorization'] = f'Bearer {settings.comfyui_token}'
+                
+                # 查询历史状态
+                response = requests.get(f"http://{server_address}/history/{prompt_id}", headers=headers)
+                history = response.json()
+                
+                if prompt_id in history:
+                    # 任务完成
+                    if task_id and task_id in task_progress:
+                        task_progress[task_id].update({
+                            "progress": 80,
+                            "message": "吉卜力风格转换完成，正在下载..."
+                        })
+                    print("✅ 吉卜力风格转换完成！")
+                    return history[prompt_id]
+                
+                count += 1
+                # 更新进度
+                if task_id and task_id in task_progress:
+                    progress = min(30 + (count * 2), 70)
+                    task_progress[task_id].update({
+                        "progress": progress,
+                        "message": f"正在转换为吉卜力风格... ({count}秒)"
+                    })
+                
+                if count % 5 == 0:  # 每5秒打印一次状态
+                    print(f"⏳ 等待中... ({count}秒)")
+                
+                time.sleep(1)
+                
+            except Exception as e:
+                print(f"检查任务状态时出错: {e}")
+                time.sleep(2)
+        
+        raise Exception(f"ComfyUI 吉卜力风格转换任务超时 ({max_wait_time}秒)")
+    
+    def _get_image(self, server_address: str, filename: str, subfolder: str, folder_type: str) -> bytes:
+        """从服务器获取生成的图像"""
+        from urllib.parse import urlencode
+        data = {"filename": filename, "subfolder": subfolder, "type": folder_type}
+        url_values = urlencode(data)
+        
+        # 准备认证头
+        headers = {}
+        if settings.comfyui_token:
+            headers['Authorization'] = f'Bearer {settings.comfyui_token}'
+        
+        response = requests.get(f"http://{server_address}/view?{url_values}", headers=headers)
+        return response.content
+    
+    def _fallback_ghibli_style(self, image: Image.Image) -> Image.Image:
+        """
+        降级方案：使用简单的滤镜效果模拟吉卜力风格
+        """
         cv_image = cv2.cvtColor(np.array(image), cv2.COLOR_RGB2BGR)
         
         # 应用一些基本的图像处理来模拟艺术效果
@@ -100,7 +331,7 @@ class GhibliStyleProcessor(ImageProcessor):
         return "ghibli_style"
     
     def get_description(self) -> str:
-        return "将图像转换为吉卜力工作室风格（模拟实现）"
+        return "使用ComfyUI将图像转换为吉卜力工作室风格"
 
 class UpscaleProcessor(ImageProcessor):
     """
@@ -342,9 +573,15 @@ class TextToImageProcessor(ImageProcessor):
         prompt_data = {"prompt": workflow, "client_id": client_id}
         data = json.dumps(prompt_data).encode('utf-8')
         
+        # 准备请求头，如果有TOKEN则添加认证
+        headers = {'Content-Type': 'application/json'}
+        if settings.comfyui_token:
+            headers['Authorization'] = f'Bearer {settings.comfyui_token}'
+        
         response = requests.post(
             f"http://{server_address}/prompt", 
             data=data,
+            headers=headers,
             timeout=settings.comfyui_timeout
         )
         result = response.json()
@@ -494,12 +731,17 @@ class TextToImageProcessor(ImageProcessor):
         progress_step = 0
         while time.time() - start_time < max_wait_time:
             try:
+                # 准备认证头
+                headers = {}
+                if settings.comfyui_token:
+                    headers['Authorization'] = f'Bearer {settings.comfyui_token}'
+                
                 # 查询队列状态
-                queue_response = requests.get(f"http://{server_address}/queue", timeout=5)
+                queue_response = requests.get(f"http://{server_address}/queue", headers=headers, timeout=5)
                 queue_data = queue_response.json()
                 
                 # 查询历史状态
-                response = requests.get(f"http://{server_address}/history/{prompt_id}")
+                response = requests.get(f"http://{server_address}/history/{prompt_id}", headers=headers)
                 history = response.json()
                 
                 if prompt_id in history:
@@ -551,7 +793,12 @@ class TextToImageProcessor(ImageProcessor):
         data = {"filename": filename, "subfolder": subfolder, "type": folder_type}
         url_values = urlencode(data)
         
-        response = requests.get(f"http://{server_address}/view?{url_values}")
+        # 准备认证头
+        headers = {}
+        if settings.comfyui_token:
+            headers['Authorization'] = f'Bearer {settings.comfyui_token}'
+        
+        response = requests.get(f"http://{server_address}/view?{url_values}", headers=headers)
         return response.content
     
     def _fallback_generate_placeholder(self, prompt: str, width: int = 512, height: int = 512) -> Image.Image:
@@ -685,9 +932,15 @@ class CreativeUpscaleProcessor(ImageProcessor):
             prompt_data = {"prompt": workflow, "client_id": client_id}
             data = json.dumps(prompt_data).encode('utf-8')
             
+            # 准备请求头，如果有TOKEN则添加认证
+            headers = {'Content-Type': 'application/json'}
+            if settings.comfyui_token:
+                headers['Authorization'] = f'Bearer {settings.comfyui_token}'
+            
             response = requests.post(
                 f"http://{server_address}/prompt", 
                 data=data,
+                headers=headers,
                 timeout=settings.comfyui_timeout
             )
             result = response.json()
@@ -724,9 +977,14 @@ class CreativeUpscaleProcessor(ImageProcessor):
     
     def _upload_image_to_comfyui(self, image_path: str, server_address: str) -> str:
         """上传图像到ComfyUI服务器"""
+        # 准备认证头
+        headers = {}
+        if settings.comfyui_token:
+            headers['Authorization'] = f'Bearer {settings.comfyui_token}'
+        
         with open(image_path, 'rb') as f:
             files = {'image': f}
-            response = requests.post(f"http://{server_address}/upload/image", files=files)
+            response = requests.post(f"http://{server_address}/upload/image", files=files, headers=headers)
             if response.status_code == 200:
                 result = response.json()
                 return result['name']  # 返回上传后的文件名
@@ -876,8 +1134,13 @@ class CreativeUpscaleProcessor(ImageProcessor):
         count = 0
         while time.time() - start_time < max_wait_time:
             try:
+                # 准备认证头
+                headers = {}
+                if settings.comfyui_token:
+                    headers['Authorization'] = f'Bearer {settings.comfyui_token}'
+                
                 # 查询历史状态
-                response = requests.get(f"http://{server_address}/history/{prompt_id}")
+                response = requests.get(f"http://{server_address}/history/{prompt_id}", headers=headers)
                 history = response.json()
                 
                 if prompt_id in history:
