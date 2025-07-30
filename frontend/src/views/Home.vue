@@ -198,8 +198,52 @@
                     <div class="progress-percent">{{ ghibliStore.currentTask.progress }}%</div>
                   </div>
                 </div>
-                <!-- 普通上传组件 -->
-                <ImageUpload v-else @upload="handleImageUpload" :loading="processing" />
+                <!-- 图片上传组件 -->
+                <div v-else>
+                  <ImageUpload @upload="handleFileSelect" :loading="false" />
+                  
+                  <!-- 运行按钮 -->
+                  <div v-if="selectedFile" class="run-section">
+                    <div class="selected-file-info">
+                      <div class="file-preview">
+                        <img :src="filePreviewUrl" alt="Selected file" class="preview-image" />
+                      </div>
+                      <div class="file-details">
+                        <p><strong>已选择:</strong> {{ selectedFile.name }}</p>
+                        <p><strong>大小:</strong> {{ formatFileSize(selectedFile.size) }}</p>
+                      </div>
+                    </div>
+                    
+                    <button 
+                      @click="handleImageProcess"
+                      :disabled="processing || !selectedFile"
+                      class="btn btn-primary run-btn"
+                    >
+                      <span v-if="!processing">
+                        <span v-if="selectedProcessing === 'ghibli_style'">🎨 开始转换吉卜力风格</span>
+                        <span v-else-if="selectedProcessing === 'grayscale'">⚫ 开始灰度转换</span>
+                        <span v-else-if="selectedProcessing === 'creative_upscale'">✨ 开始创意放大修复</span>
+                        <span v-else>🚀 开始处理</span>
+                      </span>
+                      <span v-else class="loading-content">
+                        <div class="loading"></div>
+                        <div class="progress-info">
+                          <div v-if="ghibliStore.currentTask">
+                            <div class="progress-text">{{ ghibliStore.currentTask.message }}</div>
+                            <div class="progress-bar">
+                              <div 
+                                class="progress-fill" 
+                                :style="{ width: ghibliStore.currentTask.progress + '%' }"
+                              ></div>
+                            </div>
+                            <div class="progress-percent">{{ ghibliStore.currentTask.progress }}%</div>
+                          </div>
+                          <div v-else>正在处理...</div>
+                        </div>
+                      </span>
+                    </button>
+                  </div>
+                </div>
               </div>
             </div>
           </div>
@@ -290,6 +334,10 @@ const textToImageParams = ref({
   model: ''
 })
 
+// 新增文件选择相关状态
+const selectedFile = ref<File | null>(null)
+const filePreviewUrl = ref<string>('')
+
 // 认证相关方法
 const showAuthModal = (mode: 'login' | 'register') => {
   authMode.value = mode
@@ -335,7 +383,19 @@ onUnmounted(() => {
   document.removeEventListener('click', handleClickOutside)
 })
 
-const handleImageUpload = async (file: File) => {
+// 处理文件选择（不立即处理）
+const handleFileSelect = (file: File) => {
+  selectedFile.value = file
+  filePreviewUrl.value = URL.createObjectURL(file)
+  // 清除之前的结果
+  originalImage.value = ''
+  resultImage.value = ''
+}
+
+// 处理图片处理（点击运行按钮时）
+const handleImageProcess = async () => {
+  if (!selectedFile.value) return
+  
   try {
     // 检查用户是否登录
     if (!authStore.isAuthenticated) {
@@ -352,16 +412,16 @@ const handleImageUpload = async (file: File) => {
     }
 
     processing.value = true
-    originalImage.value = URL.createObjectURL(file)
+    originalImage.value = URL.createObjectURL(selectedFile.value)
     
     // 根据选择的处理类型调用不同的方法
     let result: string
     if (selectedProcessing.value === 'ghibli_style') {
-      result = await ghibliStore.convertToGhibliStyle(file)
+      result = await ghibliStore.convertToGhibliStyle(selectedFile.value)
     } else if (selectedProcessing.value === 'grayscale') {
-      result = await ghibliStore.convertToGrayscale(file)
+      result = await ghibliStore.convertToGrayscale(selectedFile.value)
     } else if (selectedProcessing.value === 'creative_upscale') {
-      result = await ghibliStore.creativeUpscaleImageWithProgress(file)
+      result = await ghibliStore.creativeUpscaleImageWithProgress(selectedFile.value)
     } else {
       throw new Error('未知的处理类型')
     }
@@ -374,6 +434,22 @@ const handleImageUpload = async (file: File) => {
   } finally {
     processing.value = false
   }
+}
+
+// 格式化文件大小的辅助函数
+const formatFileSize = (bytes: number): string => {
+  if (bytes === 0) return '0 Bytes'
+  
+  const k = 1024
+  const sizes = ['Bytes', 'KB', 'MB', 'GB']
+  const i = Math.floor(Math.log(bytes) / Math.log(k))
+  
+  return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i]
+}
+
+// 保留原有的handleImageUpload函数以防其他地方使用
+const handleImageUpload = async (file: File) => {
+  handleFileSelect(file)
 }
 
 const handleTextToImage = async () => {
@@ -1786,6 +1862,97 @@ const handleTextToImage = async () => {
   color: rgba(255, 255, 255, 0.8);
   font-size: 1.05rem;
   line-height: 1.6;
+}
+
+/* Run Section */
+.run-section {
+  margin-top: 32px;
+  padding: 24px;
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 20px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  backdrop-filter: blur(10px);
+  animation: slideUp 0.4s ease;
+}
+
+.selected-file-info {
+  display: flex;
+  gap: 20px;
+  align-items: center;
+  margin-bottom: 24px;
+  padding: 20px;
+  background: rgba(255, 255, 255, 0.03);
+  border-radius: 16px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.file-preview {
+  flex-shrink: 0;
+}
+
+.preview-image {
+  width: 80px;
+  height: 80px;
+  object-fit: cover;
+  border-radius: 12px;
+  border: 2px solid rgba(96, 165, 250, 0.3);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+}
+
+.file-details {
+  flex: 1;
+  color: rgba(255, 255, 255, 0.9);
+}
+
+.file-details p {
+  margin: 8px 0;
+  font-size: 0.95rem;
+}
+
+.file-details strong {
+  color: white;
+  font-weight: 600;
+}
+
+.run-btn {
+  width: 100%;
+  min-height: 56px;
+  font-size: 1.1rem;
+  font-weight: 600;
+  background: linear-gradient(135deg, #60a5fa, #8b5cf6);
+  border: none;
+  border-radius: 16px;
+  color: white;
+  cursor: pointer;
+  transition: all 0.3s cubic-bezier(0.25, 0.8, 0.25, 1);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  box-shadow: 0 4px 15px rgba(96, 165, 250, 0.3);
+}
+
+.run-btn:hover:not(:disabled) {
+  transform: translateY(-3px);
+  box-shadow: 0 8px 25px rgba(96, 165, 250, 0.4);
+}
+
+.run-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+  transform: none;
+  box-shadow: 0 4px 15px rgba(96, 165, 250, 0.2);
+}
+
+@keyframes slideUp {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 /* Loading and Warning Hints */
