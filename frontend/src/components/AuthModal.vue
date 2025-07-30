@@ -25,7 +25,42 @@
           </div>
         </div>
         
-        <!-- 验证码部分已移除，使用简化注册 -->
+        <!-- 验证码 (注册时需要) -->
+        <div v-if="!isLogin" class="input-group">
+          <label for="verification_code">验证码</label>
+          <div class="verification-input-group">
+            <input
+              id="verification_code"
+              v-model="form.verification_code"
+              type="text"
+              required
+              placeholder="请输入6位验证码"
+              maxlength="6"
+              class="auth-input verification-input"
+              :disabled="!emailVerified"
+            />
+            <button
+              type="button"
+              @click="sendVerificationCode"
+              :disabled="sendingCode || countdown > 0 || !form.email.trim()"
+              class="send-code-btn"
+            >
+              <span v-if="countdown > 0">{{ countdown }}s</span>
+              <span v-else-if="sendingCode">发送中...</span>
+              <span v-else>发送验证码</span>
+            </button>
+          </div>
+          
+          <!-- 验证码状态显示 -->
+          <div v-if="codeStatus" :class="['code-status', codeStatus.type]">
+            {{ codeStatus.message }}
+          </div>
+          
+          <!-- 邮箱验证状态 -->
+          <div v-if="!isLogin && emailVerified" class="verification-status verified">
+            ✓ 验证码已发送，请查收邮件
+          </div>
+        </div>
         
         <!-- 用户名 -->
         <div class="input-group">
@@ -56,7 +91,7 @@
         <!-- 提交按钮 -->
         <button
           type="submit"
-          :disabled="loading"
+          :disabled="loading || (!isLogin && !form.verification_code.trim())"
           class="auth-submit-btn"
         >
           <span v-if="!loading">{{ isLogin ? '登录' : '注册' }}</span>
@@ -208,8 +243,12 @@ const handleSubmit = async () => {
     if (isLogin.value) {
       await authStore.login(form.username, form.password)
     } else {
-      // 使用简单注册，无需验证码
-      await authStore.registerSimple(form.username, form.email, form.password)
+      // 注册需要验证码
+      if (!form.verification_code.trim()) {
+        error.value = '请输入验证码'
+        return
+      }
+      await authStore.register(form.username, form.email, form.password, form.verification_code)
     }
     
     emit('success')

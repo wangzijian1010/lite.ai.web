@@ -58,13 +58,26 @@ def create_verification_email(email: str, code: str) -> MIMEMultipart:
 
 async def send_verification_email(email: str, code: str) -> bool:
     """发送验证邮件"""
+    print(f"🔵 [EMAIL] 准备发送验证邮件到: {email}")
+    print(f"🔵 [EMAIL] 验证码: {code}")
+    
+    # 检查邮箱配置
     if not all([settings.smtp_username, settings.smtp_password, settings.smtp_from_email]):
+        print(f"⚠️ [EMAIL] 邮箱配置不完整")
+        print(f"   SMTP_USERNAME: {'已配置' if settings.smtp_username else '未配置'}")
+        print(f"   SMTP_PASSWORD: {'已配置' if settings.smtp_password else '未配置'}")
+        print(f"   SMTP_FROM_EMAIL: {'已配置' if settings.smtp_from_email else '未配置'}")
+        
         # 开发环境下，如果没有配置邮箱，直接打印验证码
-        print(f"[开发模式] 验证码发送到 {email}: {code}")
+        print(f"🟡 [开发模式] 验证码发送到 {email}: {code}")
         return True
     
     try:
+        print(f"🔵 [EMAIL] 创建邮件内容...")
         msg = create_verification_email(email, code)
+        
+        print(f"🔵 [EMAIL] 连接SMTP服务器: {settings.smtp_host}:{settings.smtp_port}")
+        print(f"🔵 [EMAIL] 使用账户: {settings.smtp_username}")
         
         await aiosmtplib.send(
             msg,
@@ -73,13 +86,39 @@ async def send_verification_email(email: str, code: str) -> bool:
             start_tls=True,
             username=settings.smtp_username,
             password=settings.smtp_password,
+            timeout=30  # 30秒超时
         )
         
-        print(f"验证邮件已发送到: {email}")
+        print(f"✅ [EMAIL] 验证邮件发送成功: {email}")
         return True
         
+    except aiosmtplib.SMTPAuthenticationError as e:
+        print(f"🔴 [EMAIL] SMTP认证失败: {e}")
+        print(f"🔴 [EMAIL] 请检查邮箱账户和授权码是否正确")
+        print(f"🟡 [开发模式] 验证码: {code}")
+        return False
+        
+    except aiosmtplib.SMTPRecipientsRefused as e:
+        print(f"🔴 [EMAIL] 收件人被拒绝: {e}")
+        print(f"🔴 [EMAIL] 请检查收件人邮箱地址是否有效")
+        print(f"🟡 [开发模式] 验证码: {code}")
+        return False
+        
+    except aiosmtplib.SMTPServerDisconnected as e:
+        print(f"🔴 [EMAIL] SMTP服务器连接断开: {e}")
+        print(f"🔴 [EMAIL] 请检查网络连接和SMTP服务器配置")
+        print(f"🟡 [开发模式] 验证码: {code}")
+        return False
+        
+    except asyncio.TimeoutError:
+        print(f"🔴 [EMAIL] 邮件发送超时")
+        print(f"🔴 [EMAIL] 请检查网络连接")
+        print(f"🟡 [开发模式] 验证码: {code}")
+        return False
+        
     except Exception as e:
-        print(f"邮件发送失败: {e}")
+        print(f"🔴 [EMAIL] 邮件发送失败: {type(e).__name__}: {e}")
+        print(f"🔴 [EMAIL] 详细错误信息: {str(e)}")
         # 开发环境下，邮件发送失败时打印验证码
-        print(f"[开发模式] 验证码: {code}")
+        print(f"🟡 [开发模式] 验证码: {code}")
         return False

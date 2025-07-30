@@ -40,7 +40,12 @@ export const useAuthStore = defineStore('auth', () => {
   }
 
   const register = async (username: string, email: string, password: string, verification_code: string) => {
+    console.log('🔵 [FRONTEND] Starting email verified registration...')
+    console.log('🔵 [FRONTEND] API_BASE_URL:', API_BASE_URL)
+    console.log('🔵 [FRONTEND] Registration data:', { username, email, password: '***', verification_code: '***' })
+    
     try {
+      console.log('🔵 [FRONTEND] Sending registration request...')
       const response = await axios.post(`${API_BASE_URL}/register`, {
         username,
         email,
@@ -48,17 +53,26 @@ export const useAuthStore = defineStore('auth', () => {
         verification_code
       })
       
+      console.log('🟢 [FRONTEND] Registration successful:', response.data)
+      
       // 注册成功后自动登录
+      console.log('🔵 [FRONTEND] Auto-login after registration...')
       const loginResponse = await axios.post(`${API_BASE_URL}/login`, {
         username,
         password
       })
       
+      console.log('🟢 [FRONTEND] Auto-login successful')
       setToken(loginResponse.data.access_token)
       await fetchUserInfo()
       
       return response.data
-    } catch (error) {
+    } catch (error: any) {
+      console.error('🔴 [FRONTEND] Registration failed:', error)
+      console.error('🔴 [FRONTEND] Error response:', error.response?.data)
+      console.error('🔴 [FRONTEND] Error status:', error.response?.status)
+      console.error('🔴 [FRONTEND] Error headers:', error.response?.headers)
+      console.error('🔴 [FRONTEND] Full error object:', error)
       throw error
     }
   }

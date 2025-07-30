@@ -5,7 +5,9 @@
       "Bash(.venvScriptsactivate)",
       "Bash(python -m uvicorn app.main:app --reload --host 0.0.0.0 --port 8000)",
       "Bash(cd \"F:/lite.ai.web/backend\")",
-      "Bash(./venv/Scripts/activate)"
+      "Bash(./venv/Scripts/activate)",
+      "Bash(touch /Users/wangzijian/Desktop/lite.ai.web/backend/.env.example)",
+      "Bash(chmod +x /Users/wangzijian/Desktop/lite.ai.web/backend/test_email_verification.py)"
     ],
     "deny": []
   }

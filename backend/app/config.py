@@ -21,18 +21,18 @@ class Settings(BaseSettings):
     allowed_extensions: str = "jpg,jpeg,png,webp"
     
     # 邮箱配置
-    smtp_host: str = "smtp.qq.com"  # QQ邮箱SMTP服务器
-    smtp_port: int = 587
-    smtp_username: str = ""  # 发送邮箱地址
-    smtp_password: str = ""  # 邮箱授权码
-    smtp_from_email: str = ""  # 发件人邮箱（通常与smtp_username相同）
-    smtp_from_name: str = "吉卜力AI"
+    smtp_host: str = os.getenv("SMTP_HOST", "smtp.qq.com")  # QQ邮箱SMTP服务器
+    smtp_port: int = int(os.getenv("SMTP_PORT", "587"))
+    smtp_username: str = os.getenv("SMTP_USERNAME", "")  # 发送邮箱地址
+    smtp_password: str = os.getenv("SMTP_PASSWORD", "")  # 邮箱授权码
+    smtp_from_email: str = os.getenv("SMTP_FROM_EMAIL", "")  # 发件人邮箱（通常与smtp_username相同）
+    smtp_from_name: str = os.getenv("SMTP_FROM_NAME", "吉卜力AI")
     
     # 验证码配置
-    verification_code_expire_minutes: int = 5  # 验证码5分钟过期
-    verification_code_length: int = 6  # 6位验证码
-    max_verification_attempts: int = 3  # 最大验证次数
-    email_send_cooldown_seconds: int = 60  # 邮箱发送冷却时间（防刷）
+    verification_code_expire_minutes: int = int(os.getenv("VERIFICATION_CODE_EXPIRE_MINUTES", "5"))  # 验证码5分钟过期
+    verification_code_length: int = int(os.getenv("VERIFICATION_CODE_LENGTH", "6"))  # 6位验证码
+    max_verification_attempts: int = int(os.getenv("MAX_VERIFICATION_ATTEMPTS", "3"))  # 最大验证次数
+    email_send_cooldown_seconds: int = int(os.getenv("EMAIL_SEND_COOLDOWN_SECONDS", "60"))  # 邮箱发送冷却时间（防刷）
     
     # 超分 API 配置
     upscale_api_url: str = "https://api.example.com/upscale"

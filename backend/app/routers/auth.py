@@ -176,32 +176,78 @@ async def verify_code(request: VerifyCodeRequest, db: Session = Depends(get_db))
 
 @router.post("/register", response_model=UserResponse)
 async def register_user(user: UserCreate, db: Session = Depends(get_db)):
-    print(f"🟡 [REGISTER] Starting registration for email: {user.email}")
+    """用户注册（需要邮箱验证码）"""
+    print(f"🟡 [REGISTER] 开始注册流程: {user.email}")
     
     try:
-        # 检查用户是否已存在
-        print(f"🟡 [REGISTER] Checking if user exists...")
-        db_user = db.query(User).filter(User.email == user.email).first()
+        # 检查用户名是否已存在
+        print(f"🟡 [REGISTER] 检查用户名是否存在...")
+        db_user = get_user_by_username(db, username=user.username)
         if db_user:
-            print(f"🔴 [REGISTER] User already exists: {user.email}")
-            raise HTTPException(status_code=400, detail="Email already registered")
+            print(f"🔴 [REGISTER] 用户名已存在: {user.username}")
+            raise HTTPException(
+                status_code=400,
+                detail="用户名已被注册"
+            )
         
-        print(f"🟡 [REGISTER] Creating new user...")
+        # 检查邮箱是否已被注册
+        print(f"🟡 [REGISTER] 检查邮箱是否存在...")
+        db_user = get_user_by_email(db, email=user.email)
+        if db_user:
+            print(f"🔴 [REGISTER] 邮箱已存在: {user.email}")
+            raise HTTPException(
+                status_code=400,
+                detail="邮箱已被注册"
+            )
+        
+        # 验证邮箱验证码
+        print(f"🟡 [REGISTER] 验证邮箱验证码...")
+        verification = get_valid_verification_code(db, user.email)
+        
+        if not verification:
+            print(f"🔴 [REGISTER] 验证码不存在或已过期: {user.email}")
+            raise HTTPException(
+                status_code=400,
+                detail="验证码不存在、已过期或已达到最大尝试次数。请重新获取验证码。"
+            )
+        
+        # 增加尝试次数
+        verification.attempts += 1
+        
+        if verification.code != user.verification_code:
+            db.commit()
+            remaining_attempts = settings.max_verification_attempts - verification.attempts
+            print(f"🔴 [REGISTER] 验证码错误: {user.email}, 剩余尝试次数: {remaining_attempts}")
+            if remaining_attempts <= 0:
+                raise HTTPException(
+                    status_code=400,
+                    detail="验证码错误次数过多，请重新获取验证码"
+                )
+            raise HTTPException(
+                status_code=400,
+                detail=f"验证码错误，还可尝试 {remaining_attempts} 次"
+            )
+        
+        # 验证成功，标记为已使用
+        verification.used = True
+        
+        print(f"🟡 [REGISTER] 创建新用户...")
         # 创建新用户
         hashed_password = get_password_hash(user.password)
         db_user = User(
             email=user.email,
             username=user.username,
             hashed_password=hashed_password,
-            credits=50  # 新用户默认50积分
+            email_verified=True,  # 邮箱已验证
+            credits=100  # 新用户默认100积分
         )
         
-        print(f"🟡 [REGISTER] Adding user to database...")
+        print(f"🟡 [REGISTER] 保存用户到数据库...")
         db.add(db_user)
         db.commit()
         db.refresh(db_user)
         
-        print(f"🟢 [REGISTER] User created successfully: ID={db_user.id}, Email={db_user.email}")
+        print(f"🟢 [REGISTER] 用户注册成功: ID={db_user.id}, Email={db_user.email}")
         
         return UserResponse(
             id=db_user.id,
@@ -210,43 +256,20 @@ async def register_user(user: UserCreate, db: Session = Depends(get_db)):
             credits=db_user.credits,
             email_verified=db_user.email_verified
         )
+        
     except HTTPException:
         raise
     except Exception as e:
-        print(f"🔴 [REGISTER] Unexpected error: {str(e)}")
-        print(f"🔴 [REGISTER] Error type: {type(e)}")
+        print(f"🔴 [REGISTER] 注册失败: {str(e)}")
+        print(f"🔴 [REGISTER] 错误类型: {type(e)}")
         import traceback
-        print(f"🔴 [REGISTER] Traceback: {traceback.format_exc()}")
-        raise HTTPException(status_code=500, detail=f"Registration failed: {str(e)}")
-    
-    # 再次检查邮箱是否已被注册（双保险）
-    db_user = get_user_by_email(db, email=user.email)
-    if db_user:
-        raise HTTPException(
-            status_code=400,
-            detail="邮箱已被注册"
-        )
-    
-    # 创建用户
-    hashed_password = get_password_hash(user.password)
-    db_user = User(
-        username=user.username,
-        email=user.email,
-        hashed_password=hashed_password,
-        email_verified=True  # 注册时邮箱已验证
-    )
-    db.add(db_user)
-    
-    # 删除使用过的验证码记录
-    db.delete(verification)
-    
-    db.commit()
-    db.refresh(db_user)
-    return db_user
+        print(f"🔴 [REGISTER] 堆栈跟踪: {traceback.format_exc()}")
+        raise HTTPException(status_code=500, detail=f"注册失败: {str(e)}")
 
 @router.post("/register-simple", response_model=UserResponse)
 async def register_user_simple(user: UserCreateSimple, db: Session = Depends(get_db)):
-    """简单用户注册（无需验证码，用于测试）"""
+    """简单用户注册（仅开发环境使用，无需验证码）"""
+    print(f"⚠️ [REGISTER-SIMPLE] 使用简单注册模式（仅开发环境）")
     
     # 检查用户名是否已存在
     db_user = get_user_by_username(db, username=user.username)
@@ -271,11 +294,13 @@ async def register_user_simple(user: UserCreateSimple, db: Session = Depends(get
         email=user.email,
         hashed_password=hashed_password,
         email_verified=True,  # 直接设为已验证
-        credits=100  # 给新用户100积分用于测试
+        credits=50  # 给测试用户50积分
     )
     db.add(db_user)
     db.commit()
     db.refresh(db_user)
+    
+    print(f"🟡 [REGISTER-SIMPLE] 简单注册完成: {user.email}")
     return db_user
 
 @router.post("/token", response_model=Token)
