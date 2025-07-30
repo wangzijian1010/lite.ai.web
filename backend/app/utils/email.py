@@ -5,6 +5,8 @@ from datetime import datetime, timedelta
 from typing import Optional
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
+from email.utils import formataddr, formatdate, make_msgid
+from email.header import Header
 import aiosmtplib
 from app.config import settings
 
@@ -15,9 +17,22 @@ def generate_verification_code(length: int = 6) -> str:
 def create_verification_email(email: str, code: str) -> MIMEMultipart:
     """创建验证邮件"""
     msg = MIMEMultipart()
-    msg['From'] = f"{settings.smtp_from_name} <{settings.smtp_from_email}>"
+    
+    # QQ邮箱要求严格的邮件头格式
+    # 设置发件人 - 使用正确的格式
+    sender_name = Header(settings.smtp_from_name, 'utf-8').encode()
+    msg['From'] = formataddr((sender_name, settings.smtp_from_email))
+    
+    # 设置收件人
     msg['To'] = email
-    msg['Subject'] = f"【{settings.smtp_from_name}】邮箱验证码"
+    
+    # 设置主题 - 确保中文编码正确
+    subject = f"【{settings.smtp_from_name}】邮箱验证码"
+    msg['Subject'] = Header(subject, 'utf-8').encode()
+    
+    # 添加其他必要的邮件头
+    msg['Date'] = formatdate(localtime=True)
+    msg['Message-ID'] = make_msgid()
     
     html_body = f"""
     <html>
