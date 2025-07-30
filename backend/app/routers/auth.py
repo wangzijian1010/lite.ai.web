@@ -253,8 +253,10 @@ async def register_user(user: UserCreate, db: Session = Depends(get_db)):
             id=db_user.id,
             email=db_user.email,
             username=db_user.username,
+            is_active=db_user.is_active,
             credits=db_user.credits,
-            email_verified=db_user.email_verified
+            email_verified=db_user.email_verified,
+            created_at=db_user.created_at
         )
         
     except HTTPException:
@@ -301,7 +303,15 @@ async def register_user_simple(user: UserCreateSimple, db: Session = Depends(get
     db.refresh(db_user)
     
     print(f"🟡 [REGISTER-SIMPLE] 简单注册完成: {user.email}")
-    return db_user
+    return UserResponse(
+        id=db_user.id,
+        email=db_user.email,
+        username=db_user.username,
+        is_active=db_user.is_active,
+        credits=db_user.credits,
+        email_verified=db_user.email_verified,
+        created_at=db_user.created_at
+    )
 
 @router.post("/token", response_model=Token)
 async def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get_db)):
