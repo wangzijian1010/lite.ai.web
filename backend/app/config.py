@@ -52,6 +52,6 @@ class Settings(BaseSettings):
         return [ext.strip().lower() for ext in self.allowed_extensions.split(",")]
     
     class Config:
-        env_file = ".env"
+        env_file = [".env", ".env.production"]
 
 settings = Settings()
