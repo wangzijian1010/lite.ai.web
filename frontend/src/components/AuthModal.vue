@@ -7,8 +7,21 @@
       </div>
       
       <form @submit.prevent="handleSubmit" class="auth-form">
-        <!-- 邮箱 -->
-        <div class="input-group">
+        <!-- 登录时的用户名/邮箱输入框 -->
+        <div v-if="isLogin" class="input-group">
+          <label for="login_identifier">用户名/邮箱</label>
+          <input
+            id="login_identifier"
+            v-model="form.username"
+            type="text"
+            required
+            placeholder="请输入用户名或邮箱"
+            class="auth-input"
+          />
+        </div>
+        
+        <!-- 注册时的邮箱输入框 -->
+        <div v-if="!isLogin" class="input-group">
           <label for="email">邮箱</label>
           <input
             id="email"
@@ -17,7 +30,7 @@
             required
             placeholder="请输入您的邮箱"
             class="auth-input"
-            :disabled="isLogin || emailVerified"
+            :disabled="emailVerified"
           />
           <!-- 邮箱验证状态 -->
           <div v-if="!isLogin && emailVerified" class="verification-status verified">
@@ -61,8 +74,8 @@
           </div>
         </div>
         
-        <!-- 用户名 -->
-        <div class="input-group">
+        <!-- 注册时的用户名输入框 -->
+        <div v-if="!isLogin" class="input-group">
           <label for="username">用户名</label>
           <input
             id="username"
@@ -87,10 +100,31 @@
           />
         </div>
         
+        <!-- 确认密码 (注册时需要) -->
+        <div v-if="!isLogin" class="input-group">
+          <label for="confirm_password">确认密码</label>
+          <input
+            id="confirm_password"
+            v-model="form.confirm_password"
+            type="password"
+            required
+            placeholder="请再次输入密码"
+            class="auth-input"
+            :class="{ 'error': passwordMismatch }"
+          />
+          <!-- 密码匹配状态 -->
+          <div v-if="form.confirm_password && passwordMismatch" class="password-mismatch-error">
+            密码不一致，请重新输入
+          </div>
+          <div v-else-if="form.confirm_password && !passwordMismatch" class="password-match-success">
+            ✓ 密码一致
+          </div>
+        </div>
+        
         <!-- 提交按钮 -->
         <button
           type="submit"
-          :disabled="loading || (!isLogin && !form.verification_code.trim())"
+          :disabled="loading || (!isLogin && (!form.verification_code.trim() || passwordMismatch))"
           class="auth-submit-btn"
         >
           <span v-if="!loading">{{ isLogin ? '登录' : '注册' }}</span>
@@ -119,7 +153,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, watch } from 'vue'
+import { ref, reactive, watch, computed } from 'vue'
 import { useAuthStore } from '@/stores/auth'
 
 const props = defineProps<{
@@ -148,7 +182,13 @@ const form = reactive({
   username: '',
   email: '',
   password: '',
+  confirm_password: '',
   verification_code: ''
+})
+
+// 计算密码是否匹配
+const passwordMismatch = computed(() => {
+  return !isLogin.value && form.password && form.confirm_password && form.password !== form.confirm_password
 })
 
 // 监听模式变化
@@ -161,6 +201,7 @@ const resetForm = () => {
   form.username = ''
   form.email = ''
   form.password = ''
+  form.confirm_password = ''
   form.verification_code = ''
   error.value = ''
   emailVerified.value = false
@@ -226,11 +267,17 @@ const handleSubmit = async () => {
     if (isLogin.value) {
       await authStore.login(form.username, form.password)
     } else {
-      // 注册需要验证码
+      // 注册前验证
       if (!form.verification_code.trim()) {
         error.value = '请输入验证码'
         return
       }
+      
+      if (passwordMismatch.value) {
+        error.value = '密码不一致，请重新输入'
+        return
+      }
+      
       await authStore.register(form.username, form.email, form.password, form.verification_code)
     }
     
@@ -542,5 +589,42 @@ const handleSubmit = async () => {
   background: rgba(59, 130, 246, 0.15);
   color: #3b82f6;
   border: 1px solid rgba(59, 130, 246, 0.3);
+}
+
+/* 密码匹配状态样式 */
+.password-mismatch-error {
+  margin-top: 10px;
+  padding: 12px 16px;
+  border-radius: 12px;
+  font-size: 0.95rem;
+  background: rgba(239, 68, 68, 0.15);
+  color: #ef4444;
+  border: 1px solid rgba(239, 68, 68, 0.3);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.password-match-success {
+  margin-top: 10px;
+  padding: 12px 16px;
+  border-radius: 12px;
+  font-size: 0.95rem;
+  background: rgba(16, 185, 129, 0.15);
+  color: #10b981;
+  border: 1px solid rgba(16, 185, 129, 0.3);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.auth-input.error {
+  border-color: #ef4444;
+  background: rgba(239, 68, 68, 0.1);
+}
+
+.auth-input.error:focus {
+  border-color: #ef4444;
+  box-shadow: 0 0 0 4px rgba(239, 68, 68, 0.2);
 }
 </style>

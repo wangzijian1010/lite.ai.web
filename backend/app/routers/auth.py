@@ -56,8 +56,13 @@ def get_valid_verification_code(db: Session, email: str) -> EmailVerification:
         )
     ).first()
 
-def authenticate_user(db: Session, username: str, password: str):
-    user = get_user_by_username(db, username)
+def authenticate_user(db: Session, username_or_email: str, password: str):
+    # 首先尝试用户名登录
+    user = get_user_by_username(db, username_or_email)
+    # 如果用户名不存在，尝试邮箱登录
+    if not user:
+        user = get_user_by_email(db, username_or_email)
+    
     if not user:
         return False
     if not verify_password(password, user.hashed_password):
@@ -319,7 +324,7 @@ async def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends(
     if not user:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Incorrect username or password",
+            detail="用户名/邮箱或密码错误",
             headers={"WWW-Authenticate": "Bearer"},
         )
     access_token_expires = timedelta(minutes=settings.access_token_expire_minutes)
@@ -334,7 +339,7 @@ async def login_user(user_login: UserLogin, db: Session = Depends(get_db)):
     if not user:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Incorrect username or password"
+            detail="用户名/邮箱或密码错误"
         )
     access_token_expires = timedelta(minutes=settings.access_token_expire_minutes)
     access_token = create_access_token(
