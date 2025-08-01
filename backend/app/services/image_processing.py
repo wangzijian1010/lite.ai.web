@@ -407,7 +407,18 @@ class CreativeUpscaleProcessor(ImageProcessor):
                 headers=headers,
                 timeout=settings.comfyui_timeout
             )
+            
+            print(f"ComfyUI放大响应状态码: {response.status_code}")
+            print(f"ComfyUI放大响应内容: {response.text}")
+            
+            if response.status_code != 200:
+                raise Exception(f"ComfyUI放大请求失败，状态码: {response.status_code}, 响应: {response.text}")
+            
             result = response.json()
+            
+            if 'prompt_id' not in result:
+                raise Exception(f"ComfyUI放大响应格式错误，未找到prompt_id。响应内容: {result}")
+                
             prompt_id = result['prompt_id']
             
             print(f"ComfyUI 放大任务ID: {prompt_id}")
@@ -415,76 +426,35 @@ class CreativeUpscaleProcessor(ImageProcessor):
             # 6. 等待完成
             history = self._wait_for_completion(server_address, prompt_id, task_id)
             
-            # 7. 获取生成的图像（智能识别最终处理结果）
+            # 7. 获取生成的图像（优先获取节点200的SaveImage输出）
             print(f"历史输出节点: {list(history['outputs'].keys())}")
             
-            # 策略1: 查找最高编号的非LoadImage节点
-            max_node_id = 0
-            result_node_id = None
-            result_image_data = None
-            
-            for node_id in history['outputs']:
-                node_output = history['outputs'][node_id]
-                print(f"检查节点 {node_id}: {list(node_output.keys())}")
-                
-                # 跳过LoadImage节点（原图输入）
-                is_load_image = False
-                if workflow:
-                    workflow_node = workflow.get(node_id, {})
-                    if workflow_node.get("class_type") == "LoadImage":
-                        print(f"跳过LoadImage节点: {node_id}")
-                        is_load_image = True
-                
-                if not is_load_image and 'images' in node_output:
-                    try:
-                        node_num = int(node_id)
-                        if node_num > max_node_id:
-                            max_node_id = node_num
-                            result_node_id = node_id
-                            # 获取第一个（通常也是唯一的）图像
-                            for image_info in node_output['images']:
-                                print(f"找到候选图像(节点{node_id}): {image_info}")
-                                try:
-                                    image_data = self._get_image(
-                                        server_address, image_info['filename'], 
-                                        image_info['subfolder'], image_info['type']
-                                    )
-                                    result_image_data = image_data
-                                    break  # 只取第一个图像
-                                except Exception as e:
-                                    print(f"获取图像失败: {e}")
-                                    continue
-                    except ValueError:
-                        # 非数字节点ID，跳过
-                        pass
-            
-            if result_image_data:
-                print(f"✅ 成功获取处理后的图像(节点{result_node_id})")
-                return result_image_data
-            
-            # 策略2: 如果策略1失败，尝试获取任何非LoadImage节点的图像
-            for node_id in history['outputs']:
-                node_output = history['outputs'][node_id]
-                
-                # 跳过LoadImage节点
-                is_load_image = False
-                if workflow:
-                    workflow_node = workflow.get(node_id, {})
-                    if workflow_node.get("class_type") == "LoadImage":
-                        continue
-                
+            # 优先查找我们添加的SaveImage节点200
+            if '200' in history['outputs']:
+                node_output = history['outputs']['200']
                 if 'images' in node_output:
                     for image_info in node_output['images']:
-                        print(f"备用策略：尝试获取图像(节点{node_id}): {image_info}")
-                        try:
-                            image_data = self._get_image(
-                                server_address, image_info['filename'], 
-                                image_info['subfolder'], image_info['type']
-                            )
-                            return image_data
-                        except Exception as e:
-                            print(f"获取图像失败: {e}")
-                            continue
+                        print(f"找到放大后的图像(节点200): {image_info}")
+                        image_data = self._get_image(
+                            server_address, image_info['filename'], 
+                            image_info['subfolder'], image_info['type']
+                        )
+                        return image_data
+            
+            # 备用方案：查找其他输出节点，但跳过LoadImage节点101
+            for node_id in history['outputs']:
+                if node_id == '101':  # 跳过原图输入节点
+                    continue
+                    
+                node_output = history['outputs'][node_id]
+                if 'images' in node_output:
+                    for image_info in node_output['images']:
+                        print(f"找到备用图像(节点{node_id}): {image_info}")
+                        image_data = self._get_image(
+                            server_address, image_info['filename'], 
+                            image_info['subfolder'], image_info['type']
+                        )
+                        return image_data
             
             raise Exception("未能从 ComfyUI 获取放大后的图像")
             
@@ -510,45 +480,38 @@ class CreativeUpscaleProcessor(ImageProcessor):
                 raise Exception(f"图像上传失败: {response.status_code}")
     
     def _update_upscale_workflow_with_uploaded_image(self, workflow: Dict, uploaded_filename: str) -> Dict:
-        """使用上传后的文件名更新工作流，并删除对比图节点"""
+        """使用上传后的文件名更新放大工作流"""
         if not workflow:
             return None
         
-        # 直接在工作流字典中查找LoadImage节点并更新
-        for node_id, node in workflow.items():
-            if node.get("class_type") == "LoadImage":
-                # 更新LoadImage节点的输入图像
-                if "inputs" not in node:
-                    node["inputs"] = {}
-                node["inputs"]["image"] = uploaded_filename
-                print(f"更新LoadImage节点 {node_id} 的图像路径为: {uploaded_filename}")
-                break
+        # 根据upscale_0801.json，LoadImage节点是101
+        if "101" in workflow:
+            if "inputs" not in workflow["101"]:
+                workflow["101"]["inputs"] = {}
+            workflow["101"]["inputs"]["image"] = uploaded_filename
+            print(f"更新LoadImage节点101的图像路径为: {uploaded_filename}")
+        else:
+            print("警告: 在放大工作流中未找到LoadImage节点101")
         
-        # 删除对比图相关节点，只保留最终处理结果
-        nodes_to_remove = []
-        for node_id, node in workflow.items():
-            # 查找Image Comparer节点并删除
-            if node.get("class_type") == "Image Comparer (rgthree)":
-                nodes_to_remove.append(node_id)
-                print(f"删除对比图节点: {node_id}")
+        # 删除对比图节点160，只保留最终结果
+        if "160" in workflow:
+            del workflow["160"]
+            print("删除对比图保存节点160")
         
-        # 删除标记的节点
-        for node_id in nodes_to_remove:
-            del workflow[node_id]
-        
-        # 确保只有一个SaveImage节点输出最终结果，删除多余的SaveImage节点
-        save_image_nodes = []
-        for node_id, node in workflow.items():
-            if node.get("class_type") == "SaveImage":
-                save_image_nodes.append(node_id)
-        
-        # 如果有多个SaveImage节点，只保留最后一个处理结果
-        if len(save_image_nodes) > 1:
-            # 保留连接到最终处理结果的SaveImage节点（通常是编号最大的）
-            save_image_nodes.sort(key=lambda x: int(x) if x.isdigit() else 0)
-            for node_id in save_image_nodes[:-1]:  # 删除除最后一个外的所有SaveImage节点
-                del workflow[node_id]
-                print(f"删除多余的SaveImage节点: {node_id}")
+        # 添加一个SaveImage节点来保存放大后的结果
+        if "161" in workflow:
+            # 修改节点161为SaveImage节点，连接到最终处理结果
+            workflow["200"] = {
+                "inputs": {
+                    "images": ["161", 0],  # 连接到FilmGrain节点的输出
+                    "filename_prefix": f"upscaled_{uploaded_filename.split('.')[0]}"
+                },
+                "class_type": "SaveImage",
+                "_meta": {
+                    "title": "Save Upscaled Image"
+                }
+            }
+            print("添加SaveImage节点200保存放大结果")
         
         return workflow
     
@@ -578,7 +541,7 @@ class CreativeUpscaleProcessor(ImageProcessor):
         import json
         import os
         
-        json_file_path = os.path.join(os.getcwd(), settings.comfyui_upscale_workflow)
+        json_file_path = os.path.join(os.getcwd(), "workflow/upscale_0801.json")
         
         try:
             with open(json_file_path, 'r', encoding='utf-8') as f:
@@ -586,11 +549,10 @@ class CreativeUpscaleProcessor(ImageProcessor):
             return workflow
         except FileNotFoundError:
             print(f"找不到放大工作流文件: {json_file_path}")
-            # 返回一个简单的默认放大工作流模板
-            return self._get_default_upscale_workflow()
+            return None
         except json.JSONDecodeError:
             print(f"JSON文件格式错误: {json_file_path}")
-            return self._get_default_upscale_workflow()
+            return None
     
     def _get_default_upscale_workflow(self) -> Dict:
         """
