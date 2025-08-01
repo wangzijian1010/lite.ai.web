@@ -77,6 +77,67 @@ async def get_available_processors():
         "message": "获取处理器列表成功"
     }
 
+@router.get("/comfyui-models")
+async def get_comfyui_models():
+    """
+    获取ComfyUI可用的模型列表
+    """
+    try:
+        # 准备请求头
+        headers = {}
+        if settings.comfyui_token:
+            headers['Authorization'] = f'Bearer {settings.comfyui_token}'
+        
+        # 请求ComfyUI的模型列表
+        response = requests.get(
+            f"http://{settings.comfyui_server_address}/object_info", 
+            headers=headers,
+            timeout=30
+        )
+        
+        if response.status_code == 200:
+            object_info = response.json()
+            
+            # 提取CheckpointLoaderSimple的可用模型
+            checkpoint_loader = object_info.get("CheckpointLoaderSimple", {})
+            input_info = checkpoint_loader.get("input", {})
+            ckpt_name_info = input_info.get("ckpt_name", {})
+            
+            if isinstance(ckpt_name_info, list) and len(ckpt_name_info) > 0:
+                models = ckpt_name_info[0] if isinstance(ckpt_name_info[0], list) else []
+            else:
+                models = []
+            
+            print(f"从ComfyUI获取到 {len(models)} 个模型")
+            
+            return {
+                "success": True,
+                "models": models,
+                "message": f"获取到 {len(models)} 个可用模型"
+            }
+        else:
+            print(f"ComfyUI模型列表请求失败: {response.status_code}")
+            return {
+                "success": False,
+                "models": [],
+                "message": f"获取模型列表失败: HTTP {response.status_code}"
+            }
+            
+    except requests.exceptions.ConnectionError:
+        print("无法连接到ComfyUI服务器")
+        return {
+            "success": False,
+            "models": [],
+            "message": "无法连接到ComfyUI服务器"
+        }
+    except Exception as e:
+        print(f"获取ComfyUI模型列表时出错: {e}")
+        return {
+            "success": False,
+            "models": [],
+            "message": f"获取模型列表时出错: {str(e)}"
+        }
+
 @router.get("/files/{filename}")
 async def get_file(filename: str):
     """

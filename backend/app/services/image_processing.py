@@ -883,44 +883,46 @@ class TextToImageProcessor(ImageProcessor):
         if not workflow:
             return None
         
-        # 更新正面提示词
-        for node_id, node in workflow.items():
-            if (node.get("class_type") == "CLIPTextEncode" and 
-                "text" in node.get("inputs", {}) and 
-                node["inputs"]["text"] != negative_prompt):
-                workflow[node_id]["inputs"]["text"] = positive_prompt
-                break
+        # 根据text_to_image_workflow.json的结构，节点6是正面提示词，节点7是负面提示词
+        # 更新正面提示词（节点6）
+        if "6" in workflow and workflow["6"].get("class_type") == "CLIPTextEncode":
+            workflow["6"]["inputs"]["text"] = positive_prompt
+            print(f"更新正面提示词(节点6): {positive_prompt}")
         
-        # 更新负面提示词
-        for node_id, node in workflow.items():
-            if (node.get("class_type") == "CLIPTextEncode" and 
-                "text" in node.get("inputs", {}) and 
-                node["inputs"]["text"] != positive_prompt):
-                workflow[node_id]["inputs"]["text"] = negative_prompt
-                break
+        # 更新负面提示词（节点7）
+        if "7" in workflow and workflow["7"].get("class_type") == "CLIPTextEncode":
+            workflow["7"]["inputs"]["text"] = negative_prompt
+            print(f"更新负面提示词(节点7): {negative_prompt}")
         
-        # 更新模型
-        if model_name:
-            for node_id, node in workflow.items():
-                if node.get("class_type") == "CheckpointLoaderSimple":
-                    node["inputs"]["ckpt_name"] = model_name
-                    break
+        # 更新模型（节点4）
+        if model_name and "4" in workflow and workflow["4"].get("class_type") == "CheckpointLoaderSimple":
+            workflow["4"]["inputs"]["ckpt_name"] = model_name
+            print(f"更新模型(节点4): {model_name}")
         
-        # 更新其他参数
-        for node_id, node in workflow.items():
-            if node.get("class_type") == "KSampler":
-                inputs = node.get("inputs", {})
-                inputs["seed"] = int(time.time() * 1000) % 1000000000  # 随机种子
-                if steps is not None:
-                    inputs["steps"] = steps
-                if cfg is not None:
-                    inputs["cfg"] = cfg
-            elif node.get("class_type") == "EmptyLatentImage":
-                inputs = node.get("inputs", {})
-                if width is not None:
-                    inputs["width"] = width
-                if height is not None:
-                    inputs["height"] = height
+        # 更新KSampler参数（节点3）
+        if "3" in workflow and workflow["3"].get("class_type") == "KSampler":
+            inputs = workflow["3"]["inputs"]
+            inputs["seed"] = int(time.time() * 1000) % 1000000000  # 随机种子
+            if steps is not None:
+                inputs["steps"] = steps
+                print(f"更新采样步数(节点3): {steps}")
+            if cfg is not None:
+                inputs["cfg"] = cfg
+                print(f"更新CFG(节点3): {cfg}")
+        
+        # 更新图像尺寸（节点5 - EmptyLatentImage）
+        if "5" in workflow and workflow["5"].get("class_type") == "EmptyLatentImage":
+            inputs = workflow["5"]["inputs"]
+            if width is not None:
+                inputs["width"] = width
+                print(f"更新图像宽度(节点5): {width}")
+            if height is not None:
+                inputs["height"] = height
+                print(f"更新图像高度(节点5): {height}")
+        
+        # 更新SaveImage节点的文件名前缀（节点9）
+        if "9" in workflow and workflow["9"].get("class_type") == "SaveImage":
+            workflow["9"]["inputs"]["filename_prefix"] = f"txt2img_{int(time.time())}"
         
         return workflow
     
@@ -956,6 +958,7 @@ class TextToImageProcessor(ImageProcessor):
                             "progress": 80,
                             "message": "图像生成完成，正在下载..."
                         })
+                    print("✅ 文生图完成！")
                     return history[prompt_id]
                 
                 # 更新进度
@@ -968,11 +971,12 @@ class TextToImageProcessor(ImageProcessor):
                     
                     if is_running:
                         # 任务正在执行，递增进度
-                        progress_step = min(progress_step + 2, 70)
+                        progress_step = min(progress_step + 3, 70)  # 文生图进度稍快一些
                         task_progress[task_id].update({
                             "progress": 30 + progress_step,
                             "message": f"正在生成图像... ({progress_step}/70%)"
                         })
+                        print(f"⏳ 文生图进行中... {30 + progress_step}%")
                     else:
                         # 检查是否在等待队列中
                         for i, item in enumerate(pending_queue):
@@ -983,14 +987,15 @@ class TextToImageProcessor(ImageProcessor):
                                     "progress": 25,
                                     "message": f"排队中... ({position}/{total})"
                                 })
+                                print(f"📋 排队中... ({position}/{total})")
                                 break
                 
             except Exception as e:
-                print(f"检查任务状态时出错: {e}")
+                print(f"检查文生图任务状态时出错: {e}")
             
             time.sleep(1)
         
-        raise Exception(f"ComfyUI 任务超时 ({max_wait_time}秒)")
+        raise Exception(f"ComfyUI 文生图任务超时 ({max_wait_time}秒)")
     
     def _get_image(self, server_address: str, filename: str, subfolder: str, folder_type: str) -> bytes:
         """从服务器获取生成的图像"""
