@@ -185,8 +185,8 @@
               
               <!-- 图片上传 (非文生图功能) -->
               <div v-else>
-                <!-- 创意放大功能显示进度 -->
-                <div v-if="selectedProcessing === 'creative_upscale' && processing && ghibliStore.currentTask" class="upload-progress">
+                <!-- 吉卜力风格和创意放大功能显示进度 -->
+                <div v-if="(selectedProcessing === 'ghibli_style' || selectedProcessing === 'creative_upscale') && processing && ghibliStore.currentTask" class="upload-progress">
                   <div class="progress-container">
                     <div class="progress-text">{{ ghibliStore.currentTask.message }}</div>
                     <div class="progress-bar">
@@ -417,7 +417,7 @@ const handleImageProcess = async () => {
     // 根据选择的处理类型调用不同的方法
     let result: string
     if (selectedProcessing.value === 'ghibli_style') {
-      result = await ghibliStore.convertToGhibliStyle(selectedFile.value)
+      result = await ghibliStore.convertToGhibliStyleWithProgress(selectedFile.value)
     } else if (selectedProcessing.value === 'grayscale') {
       result = await ghibliStore.convertToGrayscale(selectedFile.value)
     } else if (selectedProcessing.value === 'creative_upscale') {

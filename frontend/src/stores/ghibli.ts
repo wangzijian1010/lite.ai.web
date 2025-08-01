@@ -88,6 +88,71 @@ export const useGhibliStore = defineStore('ghibli', {
       }
     },
     
+    async convertToGhibliStyleWithProgress(file: File): Promise<string> {
+      this.isProcessing = true
+      this.currentTask = null
+      
+      try {
+        const formData = new FormData()
+        formData.append('file', file)
+        
+        // 1. 启动异步任务
+        const response = await axios.post<AsyncTaskResponse>(
+          `${API_BASE_URL}/api/ghibli-style-async`,
+          formData,
+          {
+            headers: {
+              'Content-Type': 'multipart/form-data'
+            },
+            timeout: 60000 // 1分钟超时用于启动任务
+          }
+        )
+        
+        if (!response.data.success) {
+          throw new Error(response.data.message || '启动吉卜力风格转换任务失败')
+        }
+        
+        const taskId = response.data.task_id
+        
+        // 2. 初始化任务状态
+        this.currentTask = {
+          taskId,
+          progress: 0,
+          status: 'pending',
+          message: '任务已创建...'
+        }
+        
+        // 3. 轮询进度
+        const result = await this.pollTaskProgress(taskId)
+        
+        // 4. 保存到历史记录
+        this.processingHistory.push({
+          original: URL.createObjectURL(file),
+          result,
+          timestamp: Date.now(),
+          processingType: 'ghibli_style',
+          processingTime: this.currentTask?.progress || 0
+        })
+        
+        return result
+        
+      } catch (error) {
+        if (axios.isAxiosError(error)) {
+          if (error.code === 'ECONNABORTED') {
+            throw new Error('请求超时，请重试')
+          } else if (error.response) {
+            throw new Error(error.response.data?.detail || '服务器错误')
+          } else if (error.request) {
+            throw new Error('无法连接到服务器，请检查网络连接')
+          }
+        }
+        throw new Error('吉卜力风格转换时发生未知错误')
+      } finally {
+        this.isProcessing = false
+        this.currentTask = null
+      }
+    },
+    
     async convertToGhibliStyle(file: File): Promise<string> {
       return this.processImage(file, 'ghibli_style')
     },

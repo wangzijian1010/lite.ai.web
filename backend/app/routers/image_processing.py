@@ -339,24 +339,135 @@ async def process_image(
             detail=f"服务器内部错误: {str(e)}"
         )
 
-@router.post("/convert-to-ghibli")
-async def convert_to_ghibli_style(
+@router.post("/ghibli-style-async")
+async def ghibli_style_async(
     file: UploadFile = File(..., description="要转换的图像文件"),
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
     """
-    专门的吉卜力风格转换端点（需要登录）
+    异步吉卜力风格转换端点（支持进度跟踪）
     
-    这是为了兼容现有前端代码而创建的便捷端点
+    Args:
+        file: 上传的图像文件
+        current_user: 当前登录用户
+        db: 数据库会话
+    
+    Returns:
+        AsyncTaskResponse: 任务ID和状态
     """
-    return await process_image(
-        file=file, 
-        processing_type="ghibli_style", 
-        parameters=None,
-        current_user=current_user,
-        db=db
-    )
+    import uuid
+    import asyncio
+    from concurrent.futures import ThreadPoolExecutor
+    
+    try:
+        # 检查积分是否足够
+        required_credits = 10
+        if not check_user_credits(current_user, required_credits):
+            raise HTTPException(
+                status_code=400, 
+                detail=f"积分不足，当前积分：{current_user.credits}，需要积分：{required_credits}。请充值后再试。"
+            )
+            
+        # 扣除积分
+        success = deduct_user_credits(db, current_user, required_credits)
+        if not success:
+            raise HTTPException(
+                status_code=400,
+                detail="积分扣除失败"
+            )
+        
+        # 验证文件
+        if not validate_image_file(file):
+            raise HTTPException(
+                status_code=400, 
+                detail="无效的图像文件或文件过大"
+            )
+        
+        # 生成任务ID
+        task_id = str(uuid.uuid4())
+        
+        # 初始化任务进度
+        task_progress[task_id] = {
+            'status': 'pending',
+            'progress': 0,
+            'message': '任务已创建，准备转换为吉卜力风格...',
+            'result_url': None,
+            'error': None,
+            'created_at': time.time()
+        }
+        
+        # 读取文件内容
+        file_content = await file.read()
+        
+        # 启动后台任务
+        asyncio.create_task(ghibli_style_background(
+            task_id, file_content, file.filename or "image"
+        ))
+        
+        return {
+            "success": True,
+            "message": "吉卜力风格转换任务已创建",
+            "task_id": task_id,
+            "estimated_time": 90  # 预估1.5分钟
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"创建吉卜力风格转换任务失败: {str(e)}"
+        )
+
+async def ghibli_style_background(task_id: str, file_content: bytes, filename: str):
+    """
+    后台吉卜力风格转换任务
+    """
+    try:
+        # 更新任务状态
+        task_progress[task_id].update({
+            'status': 'running',
+            'progress': 10,
+            'message': '开始转换为吉卜力风格...'
+        })
+        
+        # 在线程池中执行图像处理（因为图像处理是CPU密集型任务）
+        loop = asyncio.get_event_loop()
+        with ThreadPoolExecutor() as executor:
+            processed_data, processing_time = await loop.run_in_executor(
+                executor,
+                image_processing_service.process_image,
+                file_content,
+                'ghibli_style',
+                {},
+                task_id  # 传递task_id用于进度更新
+            )
+        
+        # 保存处理后的图像
+        processed_file_path = save_processed_image(processed_data, filename)
+        
+        # 生成访问URL
+        processed_image_url = get_file_url(processed_file_path)
+        
+        # 更新任务完成状态
+        task_progress[task_id].update({
+            'status': 'completed',
+            'progress': 100,
+            'message': '吉卜力风格转换完成',
+            'result_url': processed_image_url,
+            'completed_at': time.time()
+        })
+        
+    except Exception as e:
+        # 更新任务失败状态
+        task_progress[task_id].update({
+            'status': 'failed',
+            'progress': 0,
+            'message': '吉卜力风格转换失败',
+            'error': str(e)
+        })
+        print(f"❌ [GHIBLI ASYNC TASK] Task {task_id} failed: {str(e)}")
 
 
 
