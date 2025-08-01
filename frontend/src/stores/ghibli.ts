@@ -235,7 +235,7 @@ export const useGhibliStore = defineStore('ghibli', {
       }
     },
     
-    async generateImageWithProgress(prompt: string, negativePrompt?: string, model?: string): Promise<string> {
+    async generateImageWithProgress(prompt: string, negativePrompt?: string): Promise<string> {
       this.isProcessing = true
       this.currentTask = null
       
@@ -245,9 +245,11 @@ export const useGhibliStore = defineStore('ghibli', {
         if (negativePrompt) {
           formData.append('negative_prompt', negativePrompt)
         }
-        if (model) {
-          formData.append('model', model)
-        }
+        // 使用固定的默认参数，简化用户体验
+        formData.append('width', '512')
+        formData.append('height', '512')
+        formData.append('steps', '20')
+        formData.append('cfg', '8')
         
         // 1. 启动异步任务
         const response = await axios.post<AsyncTaskResponse>(

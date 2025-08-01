@@ -133,31 +133,6 @@
                   ></textarea>
                 </div>
                 
-                <div class="input-group">
-                  <label for="model">模型选择</label>
-                  <select 
-                    id="model"
-                    v-model="textToImageParams.model"
-                    class="input-field select-field"
-                    :disabled="ghibliStore.modelsLoading"
-                  >
-                    <option value="">使用默认模型</option>
-                    <option 
-                      v-for="model in ghibliStore.availableModels" 
-                      :key="model" 
-                      :value="model"
-                    >
-                      {{ model }}
-                    </option>
-                  </select>
-                  <div v-if="ghibliStore.modelsLoading" class="loading-hint">
-                    正在加载模型列表...
-                  </div>
-                  <div v-if="!ghibliStore.modelsLoading && ghibliStore.availableModels.length === 0" class="warning-hint">
-                    无法获取模型列表，将使用默认模型
-                  </div>
-                </div>
-                
                 <button 
                   @click="handleTextToImage"
                   :disabled="processing || !textToImageParams.prompt.trim()"
@@ -330,8 +305,7 @@ const processing = ref(false)
 const selectedProcessing = ref<'ghibli_style' | 'grayscale' | 'text_to_image' | 'creative_upscale'>('ghibli_style')
 const textToImageParams = ref({
   prompt: '',
-  negative_prompt: 'text, watermark, blurry, low quality',
-  model: ''
+  negative_prompt: 'text, watermark, blurry, low quality'
 })
 
 // 新增文件选择相关状态
@@ -372,8 +346,6 @@ const handleAuthSuccess = () => {
 onMounted(() => {
   // 加载可用的处理器
   ghibliStore.loadAvailableProcessors()
-  // 加载可用的模型列表
-  ghibliStore.loadAvailableModels()
   // 添加点击外部关闭下拉菜单的事件监听
   document.addEventListener('click', handleClickOutside)
 })
@@ -473,8 +445,7 @@ const handleTextToImage = async () => {
     
     const result = await ghibliStore.generateImageWithProgress(
       textToImageParams.value.prompt,
-      textToImageParams.value.negative_prompt || undefined,
-      textToImageParams.value.model || undefined
+      textToImageParams.value.negative_prompt || undefined
     )
     
     resultImage.value = result

@@ -1125,7 +1125,7 @@ class ImageProcessingService:
         处理图像
         
         Args:
-            image_data: 图像二进制数据
+            image_data: 图像二进制数据（文生图时为空）
             processing_type: 处理类型
             parameters: 处理参数
             task_id: 任务ID，用于进度跟踪
@@ -1144,15 +1144,20 @@ class ImageProcessingService:
         if parameters and not processor.validate_parameters(parameters):
             raise ValueError("无效的处理参数")
         
-        # 加载图像
-        image = Image.open(io.BytesIO(image_data))
-        
-        # 确保图像是RGB模式
-        if image.mode != 'RGB':
-            image = image.convert('RGB')
-        
-        # 处理图像
-        processed_image = processor.process(image, parameters or {}, task_id)
+        # 文生图处理特殊逻辑
+        if processing_type == 'text_to_image':
+            # 文生图不需要输入图像
+            processed_image = processor.process(None, parameters or {}, task_id)
+        else:
+            # 加载图像
+            image = Image.open(io.BytesIO(image_data))
+            
+            # 确保图像是RGB模式
+            if image.mode != 'RGB':
+                image = image.convert('RGB')
+            
+            # 处理图像
+            processed_image = processor.process(image, parameters or {}, task_id)
         
         # 保存处理后的图像
         output_buffer = io.BytesIO()

@@ -7,8 +7,10 @@
       "Bash(cd \"F:/lite.ai.web/backend\")",
       "Bash(./venv/Scripts/activate)",
       "Bash(touch /Users/wangzijian/Desktop/lite.ai.web/backend/.env.example)",
-      "Bash(chmod +x /Users/wangzijian/Desktop/lite.ai.web/backend/test_email_verification.py)"
+      "Bash(chmod +x /Users/wangzijian/Desktop/lite.ai.web/backend/test_email_verification.py)",
+      "Bash(find:*)"
     ],
     "deny": []
-  }
+  },
+  "$schema": "https://json.schemastore.org/claude-code-settings.json"
 }
