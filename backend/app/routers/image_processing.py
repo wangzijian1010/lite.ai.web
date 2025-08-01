@@ -354,3 +354,22 @@ async def convert_to_ghibli_style(
         current_user=current_user,
         db=db
     )
+
+
+
+@router.post("/upscale")
+async def upscale_image(
+    file: UploadFile = File(..., description="要放大的图像文件"),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    专门的图像高清放大端点（需要登录）
+    """
+    return await process_image(
+        file=file, 
+        processing_type="creative_upscale", 
+        parameters=None,
+        current_user=current_user,
+        db=db
+    )

@@ -44,7 +44,7 @@ class Settings(BaseSettings):
     comfyui_token: str = os.getenv("COMFYUI_TOKEN", "")
     comfyui_workflow_json: str = os.getenv("COMFYUI_TEXT_TO_IMAGE_WORKFLOW", "workflow/text_to_image_workflow.json")  # 保留兼容性
     comfyui_text_to_image_workflow: str = os.getenv("COMFYUI_TEXT_TO_IMAGE_WORKFLOW", "workflow/text_to_image_workflow.json")
-    comfyui_upscale_workflow: str = os.getenv("COMFYUI_UPSCALE_WORKFLOW", "workflow/upscale_workflow.json")
+    comfyui_upscale_workflow: str = os.getenv("COMFYUI_UPSCALE_WORKFLOW", "workflow/upscale_0801.json")
     comfyui_input_dir: str = os.getenv("COMFYUI_INPUT_DIR", "./comfyui_temp")  # ComfyUI输入文件目录
     comfyui_timeout: int = int(os.getenv("COMFYUI_TIMEOUT", "120"))
     
