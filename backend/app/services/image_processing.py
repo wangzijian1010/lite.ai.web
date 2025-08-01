@@ -415,59 +415,76 @@ class CreativeUpscaleProcessor(ImageProcessor):
             # 6. 等待完成
             history = self._wait_for_completion(server_address, prompt_id, task_id)
             
-            # 7. 获取生成的图像（优先获取最终处理结果，避免返回原图）
-            # 按优先级查找输出节点：先找最终处理结果，再找其他图像输出
-            priority_nodes = []
-            other_nodes = []
+            # 7. 获取生成的图像（智能识别最终处理结果）
+            print(f"历史输出节点: {list(history['outputs'].keys())}")
+            
+            # 策略1: 查找最高编号的非LoadImage节点
+            max_node_id = 0
+            result_node_id = None
+            result_image_data = None
             
             for node_id in history['outputs']:
                 node_output = history['outputs'][node_id]
-                print(f"检查节点 {node_id}: {node_output}")
+                print(f"检查节点 {node_id}: {list(node_output.keys())}")
                 
-                # 根据节点ID判断优先级（通常数字越大越是最终结果）
-                try:
-                    node_num = int(node_id)
-                    if node_num > 150:  # 高编号节点通常是最终处理结果
-                        priority_nodes.append((node_num, node_id, node_output))
-                    else:
-                        other_nodes.append((node_num, node_id, node_output))
-                except ValueError:
-                    other_nodes.append((0, node_id, node_output))
+                # 跳过LoadImage节点（原图输入）
+                is_load_image = False
+                if workflow:
+                    workflow_node = workflow.get(node_id, {})
+                    if workflow_node.get("class_type") == "LoadImage":
+                        print(f"跳过LoadImage节点: {node_id}")
+                        is_load_image = True
+                
+                if not is_load_image and 'images' in node_output:
+                    try:
+                        node_num = int(node_id)
+                        if node_num > max_node_id:
+                            max_node_id = node_num
+                            result_node_id = node_id
+                            # 获取第一个（通常也是唯一的）图像
+                            for image_info in node_output['images']:
+                                print(f"找到候选图像(节点{node_id}): {image_info}")
+                                try:
+                                    image_data = self._get_image(
+                                        server_address, image_info['filename'], 
+                                        image_info['subfolder'], image_info['type']
+                                    )
+                                    result_image_data = image_data
+                                    break  # 只取第一个图像
+                                except Exception as e:
+                                    print(f"获取图像失败: {e}")
+                                    continue
+                    except ValueError:
+                        # 非数字节点ID，跳过
+                        pass
             
-            # 按节点编号排序，优先处理高编号节点
-            priority_nodes.sort(reverse=True)
-            other_nodes.sort(reverse=True)
+            if result_image_data:
+                print(f"✅ 成功获取处理后的图像(节点{result_node_id})")
+                return result_image_data
             
-            # 先检查优先级节点（最终处理结果）
-            for _, node_id, node_output in priority_nodes:
-                # 优先查找处理后的图像，避免返回原图
-                image_keys = ['images']  # 只使用images，避免混淆
-                for key in image_keys:
-                    if key in node_output:
-                        for image_info in node_output[key]:
-                            print(f"找到最终处理图像(节点{node_id}, {key}): {image_info}")
+            # 策略2: 如果策略1失败，尝试获取任何非LoadImage节点的图像
+            for node_id in history['outputs']:
+                node_output = history['outputs'][node_id]
+                
+                # 跳过LoadImage节点
+                is_load_image = False
+                if workflow:
+                    workflow_node = workflow.get(node_id, {})
+                    if workflow_node.get("class_type") == "LoadImage":
+                        continue
+                
+                if 'images' in node_output:
+                    for image_info in node_output['images']:
+                        print(f"备用策略：尝试获取图像(节点{node_id}): {image_info}")
+                        try:
                             image_data = self._get_image(
                                 server_address, image_info['filename'], 
                                 image_info['subfolder'], image_info['type']
                             )
                             return image_data
-            
-            # 如果优先级节点没有图像，再检查其他节点
-            for _, node_id, node_output in other_nodes:
-                # 跳过LoadImage节点，避免返回原图
-                if node_id == "101":  # 根据upscale_workflow.json，101是LoadImage节点
-                    continue
-                    
-                image_keys = ['images']
-                for key in image_keys:
-                    if key in node_output:
-                        for image_info in node_output[key]:
-                            print(f"找到备用图像(节点{node_id}, {key}): {image_info}")
-                            image_data = self._get_image(
-                                server_address, image_info['filename'], 
-                                image_info['subfolder'], image_info['type']
-                            )
-                            return image_data
+                        except Exception as e:
+                            print(f"获取图像失败: {e}")
+                            continue
             
             raise Exception("未能从 ComfyUI 获取放大后的图像")
             
