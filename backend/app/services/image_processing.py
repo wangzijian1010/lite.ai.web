@@ -333,157 +333,383 @@ class GhibliStyleProcessor(ImageProcessor):
     def get_description(self) -> str:
         return "使用ComfyUI将图像转换为吉卜力工作室风格"
 
-class UpscaleProcessor(ImageProcessor):
+class CreativeUpscaleProcessor(ImageProcessor):
     """
-    图片超分放大处理器
+    ComfyUI 创意放大修复处理器
     
-    这是一个外部API调用的示例，展示如何集成第三方AI服务
+    使用ComfyUI进行图片的创意放大和修复，参数固定，只需要输入图片
     """
     
     def process(self, image: Image.Image, parameters: Dict[str, Any] = None, task_id: str = None) -> Image.Image:
         """
-        使用外部API进行图片超分放大
+        使用 ComfyUI 进行创意放大修复
         
         Args:
             image: 输入图像
-            parameters: 处理参数，可包含：
-                - scale_factor: 放大倍数 (2, 4, 8)
-                - model: 使用的模型 (real-esrgan, esrgan, etc.)
+            parameters: 处理参数（此处理器参数固定）
+            task_id: 任务ID，用于进度跟踪
         
         Returns:
-            放大后的图像
+            处理后的图像
         """
-        # 默认参数
-        scale_factor = parameters.get('scale_factor', 2) if parameters else 2
-        model = parameters.get('model', 'real-esrgan') if parameters else 'real-esrgan'
-        
         try:
-            # 方法1: 使用 requests (同步调用)
-            result_image = self._call_upscale_api_sync(image, scale_factor, model)
-            return result_image
+            # 调用 ComfyUI API
+            image_data = self._call_comfyui_upscale_api(image, task_id)
+            
+            # 将图像数据转换为 PIL Image
+            return Image.open(io.BytesIO(image_data))
             
         except Exception as e:
-            print(f"外部API调用失败: {e}")
-            # 如果外部API失败，使用简单的插值放大作为降级方案
-            return self._fallback_upscale(image, scale_factor)
+            print(f"ComfyUI 创意放大API调用失败: {e}")
+            # 降级方案：使用简单的放大
+            return self._fallback_upscale(image)
     
-    def _call_upscale_api_sync(self, image: Image.Image, scale_factor: int, model: str) -> Image.Image:
+    def _call_comfyui_upscale_api(self, image: Image.Image, task_id: str = None) -> bytes:
         """
-        同步调用外部超分API
-        
-        这是一个示例实现，展示如何调用外部AI服务
+        调用 ComfyUI API 进行创意放大
         """
-        # 将图像转换为base64
-        buffer = io.BytesIO()
-        image.save(buffer, format='PNG')
-        image_base64 = base64.b64encode(buffer.getvalue()).decode()
+        import json
+        import uuid
+        import tempfile
+        import os
+        from urllib.parse import urlencode
         
-        # 准备API请求数据
-        api_data = {
-            "image": image_base64,
-            "scale_factor": scale_factor,
-            "model": model,
-            "format": "png"
-        }
+        server_address = settings.comfyui_server_address
+        client_id = str(uuid.uuid4())
         
-        headers = {
-            "Authorization": f"Bearer {settings.upscale_api_key}",
-            "Content-Type": "application/json"
-        }
+        # 1. 保存输入图像到临时文件
+        temp_image_path = self._save_temp_image(image)
         
-        # 发送请求到外部API
-        response = requests.post(
-            settings.upscale_api_url,
-            json=api_data,
-            headers=headers,
-            timeout=settings.upscale_api_timeout
-        )
-        
-        if response.status_code == 200:
-            result_data = response.json()
+        try:
+            # 2. 上传图像到ComfyUI服务器
+            uploaded_filename = self._upload_image_to_comfyui(temp_image_path, server_address)
             
-            # 假设API返回格式为 {"success": true, "result_image": "base64_string"}
-            if result_data.get("success"):
-                result_image_base64 = result_data.get("result_image")
-                result_image_data = base64.b64decode(result_image_base64)
-                return Image.open(io.BytesIO(result_image_data))
-            else:
-                raise Exception(f"API返回错误: {result_data.get('message', '未知错误')}")
-        else:
-            raise Exception(f"API请求失败: HTTP {response.status_code}")
-    
-    async def _call_upscale_api_async(self, image: Image.Image, scale_factor: int, model: str) -> Image.Image:
-        """
-        异步调用外部超分API (可选实现)
-        
-        对于耗时较长的AI处理，建议使用异步调用
-        """
-        # 将图像转换为base64
-        buffer = io.BytesIO()
-        image.save(buffer, format='PNG')
-        image_base64 = base64.b64encode(buffer.getvalue()).decode()
-        
-        # 准备API请求数据
-        api_data = {
-            "image": image_base64,
-            "scale_factor": scale_factor,
-            "model": model,
-            "format": "png"
-        }
-        
-        headers = {
-            "Authorization": f"Bearer {settings.upscale_api_key}",
-            "Content-Type": "application/json"
-        }
-        
-        # 使用aiohttp发送异步请求
-        async with aiohttp.ClientSession() as session:
-            async with session.post(
-                settings.upscale_api_url,
-                json=api_data,
+            # 3. 加载放大工作流模板
+            workflow = self._load_upscale_workflow_template()
+            if not workflow:
+                raise Exception("无法加载 ComfyUI 放大工作流模板")
+            
+            # 4. 更新工作流参数（使用上传后的文件名）
+            workflow = self._update_upscale_workflow_with_uploaded_image(workflow, uploaded_filename)
+            
+            # 5. 提交到队列
+            prompt_data = {"prompt": workflow, "client_id": client_id}
+            data = json.dumps(prompt_data).encode('utf-8')
+            
+            # 准备请求头，如果有TOKEN则添加认证
+            headers = {'Content-Type': 'application/json'}
+            if settings.comfyui_token:
+                headers['Authorization'] = f'Bearer {settings.comfyui_token}'
+            
+            response = requests.post(
+                f"http://{server_address}/prompt", 
+                data=data,
                 headers=headers,
-                timeout=aiohttp.ClientTimeout(total=settings.upscale_api_timeout)
-            ) as response:
-                if response.status == 200:
-                    result_data = await response.json()
-                    
-                    if result_data.get("success"):
-                        result_image_base64 = result_data.get("result_image")
-                        result_image_data = base64.b64decode(result_image_base64)
-                        return Image.open(io.BytesIO(result_image_data))
+                timeout=settings.comfyui_timeout
+            )
+            result = response.json()
+            prompt_id = result['prompt_id']
+            
+            print(f"ComfyUI 放大任务ID: {prompt_id}")
+            
+            # 6. 等待完成
+            history = self._wait_for_completion(server_address, prompt_id, task_id)
+            
+            # 7. 获取生成的图像（优先获取最终处理结果，避免返回原图）
+            # 按优先级查找输出节点：先找最终处理结果，再找其他图像输出
+            priority_nodes = []
+            other_nodes = []
+            
+            for node_id in history['outputs']:
+                node_output = history['outputs'][node_id]
+                print(f"检查节点 {node_id}: {node_output}")
+                
+                # 根据节点ID判断优先级（通常数字越大越是最终结果）
+                try:
+                    node_num = int(node_id)
+                    if node_num > 150:  # 高编号节点通常是最终处理结果
+                        priority_nodes.append((node_num, node_id, node_output))
                     else:
-                        raise Exception(f"API返回错误: {result_data.get('message', '未知错误')}")
-                else:
-                    raise Exception(f"API请求失败: HTTP {response.status}")
+                        other_nodes.append((node_num, node_id, node_output))
+                except ValueError:
+                    other_nodes.append((0, node_id, node_output))
+            
+            # 按节点编号排序，优先处理高编号节点
+            priority_nodes.sort(reverse=True)
+            other_nodes.sort(reverse=True)
+            
+            # 先检查优先级节点（最终处理结果）
+            for _, node_id, node_output in priority_nodes:
+                # 优先查找处理后的图像，避免返回原图
+                image_keys = ['images']  # 只使用images，避免混淆
+                for key in image_keys:
+                    if key in node_output:
+                        for image_info in node_output[key]:
+                            print(f"找到最终处理图像(节点{node_id}, {key}): {image_info}")
+                            image_data = self._get_image(
+                                server_address, image_info['filename'], 
+                                image_info['subfolder'], image_info['type']
+                            )
+                            return image_data
+            
+            # 如果优先级节点没有图像，再检查其他节点
+            for _, node_id, node_output in other_nodes:
+                # 跳过LoadImage节点，避免返回原图
+                if node_id == "101":  # 根据upscale_workflow.json，101是LoadImage节点
+                    continue
+                    
+                image_keys = ['images']
+                for key in image_keys:
+                    if key in node_output:
+                        for image_info in node_output[key]:
+                            print(f"找到备用图像(节点{node_id}, {key}): {image_info}")
+                            image_data = self._get_image(
+                                server_address, image_info['filename'], 
+                                image_info['subfolder'], image_info['type']
+                            )
+                            return image_data
+            
+            raise Exception("未能从 ComfyUI 获取放大后的图像")
+            
+        finally:
+            # 清理临时文件
+            if os.path.exists(temp_image_path):
+                os.remove(temp_image_path)
     
-    def _fallback_upscale(self, image: Image.Image, scale_factor: int) -> Image.Image:
-        """
-        降级方案：简单的插值放大
+    def _upload_image_to_comfyui(self, image_path: str, server_address: str) -> str:
+        """上传图像到ComfyUI服务器"""
+        # 准备认证头
+        headers = {}
+        if settings.comfyui_token:
+            headers['Authorization'] = f'Bearer {settings.comfyui_token}'
         
-        当外部API不可用时使用
+        with open(image_path, 'rb') as f:
+            files = {'image': f}
+            response = requests.post(f"http://{server_address}/upload/image", files=files, headers=headers)
+            if response.status_code == 200:
+                result = response.json()
+                return result['name']  # 返回上传后的文件名
+            else:
+                raise Exception(f"图像上传失败: {response.status_code}")
+    
+    def _update_upscale_workflow_with_uploaded_image(self, workflow: Dict, uploaded_filename: str) -> Dict:
+        """使用上传后的文件名更新工作流，并删除对比图节点"""
+        if not workflow:
+            return None
+        
+        # 直接在工作流字典中查找LoadImage节点并更新
+        for node_id, node in workflow.items():
+            if node.get("class_type") == "LoadImage":
+                # 更新LoadImage节点的输入图像
+                if "inputs" not in node:
+                    node["inputs"] = {}
+                node["inputs"]["image"] = uploaded_filename
+                print(f"更新LoadImage节点 {node_id} 的图像路径为: {uploaded_filename}")
+                break
+        
+        # 删除对比图相关节点，只保留最终处理结果
+        nodes_to_remove = []
+        for node_id, node in workflow.items():
+            # 查找Image Comparer节点并删除
+            if node.get("class_type") == "Image Comparer (rgthree)":
+                nodes_to_remove.append(node_id)
+                print(f"删除对比图节点: {node_id}")
+        
+        # 删除标记的节点
+        for node_id in nodes_to_remove:
+            del workflow[node_id]
+        
+        # 确保只有一个SaveImage节点输出最终结果，删除多余的SaveImage节点
+        save_image_nodes = []
+        for node_id, node in workflow.items():
+            if node.get("class_type") == "SaveImage":
+                save_image_nodes.append(node_id)
+        
+        # 如果有多个SaveImage节点，只保留最后一个处理结果
+        if len(save_image_nodes) > 1:
+            # 保留连接到最终处理结果的SaveImage节点（通常是编号最大的）
+            save_image_nodes.sort(key=lambda x: int(x) if x.isdigit() else 0)
+            for node_id in save_image_nodes[:-1]:  # 删除除最后一个外的所有SaveImage节点
+                del workflow[node_id]
+                print(f"删除多余的SaveImage节点: {node_id}")
+        
+        return workflow
+    
+    def _save_temp_image(self, image: Image.Image) -> str:
+        """保存图像到指定目录"""
+        import tempfile
+        import os
+        import uuid
+        
+        # 生成唯一文件名
+        filename = f"input_{uuid.uuid4().hex[:8]}.png"
+        
+        # 使用配置的目录
+        input_dir = settings.comfyui_input_dir
+        
+        # 确保目录存在
+        os.makedirs(input_dir, exist_ok=True)
+        
+        # 保存文件
+        file_path = os.path.join(input_dir, filename)
+        image.save(file_path, format='PNG')
+        
+        return file_path
+    
+    def _load_upscale_workflow_template(self) -> Dict:
+        """加载放大工作流模板"""
+        import json
+        import os
+        
+        json_file_path = os.path.join(os.getcwd(), settings.comfyui_upscale_workflow)
+        
+        try:
+            with open(json_file_path, 'r', encoding='utf-8') as f:
+                workflow = json.load(f)
+            return workflow
+        except FileNotFoundError:
+            print(f"找不到放大工作流文件: {json_file_path}")
+            # 返回一个简单的默认放大工作流模板
+            return self._get_default_upscale_workflow()
+        except json.JSONDecodeError:
+            print(f"JSON文件格式错误: {json_file_path}")
+            return self._get_default_upscale_workflow()
+    
+    def _get_default_upscale_workflow(self) -> Dict:
+        """
+        返回一个基本的放大工作流模板
+        如果找不到放大工作流文件时使用
+        """
+        return {
+            "1": {
+                "class_type": "LoadImage",
+                "inputs": {"image": "input.png"}
+            },
+            "2": {
+                "class_type": "CheckpointLoaderSimple",
+                "inputs": {"ckpt_name": "model.safetensors"}
+            },
+            "3": {
+                "class_type": "VAEDecode",
+                "inputs": {"samples": ["7", 0], "vae": ["2", 2]}
+            },
+            "4": {
+                "class_type": "VAEEncode",
+                "inputs": {"pixels": ["1", 0], "vae": ["2", 2]}
+            },
+            "5": {
+                "class_type": "CLIPTextEncode",
+                "inputs": {"text": "masterpiece, best quality, highres", "clip": ["2", 1]}
+            },
+            "6": {
+                "class_type": "CLIPTextEncode",
+                "inputs": {"text": "text, watermark, blurry", "clip": ["2", 1]}
+            },
+            "7": {
+                "class_type": "KSampler",
+                "inputs": {
+                    "seed": 42,
+                    "steps": 20,
+                    "cfg": 8,
+                    "sampler_name": "euler",
+                    "scheduler": "normal",
+                    "denoise": 0.35,
+                    "model": ["2", 0],
+                    "positive": ["5", 0],
+                    "negative": ["6", 0],
+                    "latent_image": ["4", 0]
+                }
+            },
+            "8": {
+                "class_type": "SaveImage",
+                "inputs": {"images": ["3", 0], "filename_prefix": "upscaled"}
+            }
+        }
+    
+    def _wait_for_completion(self, server_address: str, prompt_id: str, task_id: str = None) -> Dict:
+        """等待图像生成完成"""
+        print("正在等待 ComfyUI 放大处理...")
+        max_wait_time = settings.comfyui_timeout
+        start_time = time.time()
+        
+        # 导入task_progress（需要在循环外访问）
+        from app.routers.image_processing import task_progress
+        
+        count = 0
+        while time.time() - start_time < max_wait_time:
+            try:
+                # 准备认证头
+                headers = {}
+                if settings.comfyui_token:
+                    headers['Authorization'] = f'Bearer {settings.comfyui_token}'
+                
+                # 查询历史状态
+                response = requests.get(f"http://{server_address}/history/{prompt_id}", headers=headers)
+                history = response.json()
+                
+                if prompt_id in history:
+                    # 任务完成
+                    if task_id and task_id in task_progress:
+                        task_progress[task_id].update({
+                            "progress": 80,
+                            "message": "放大处理完成，正在下载..."
+                        })
+                    print("✅ 放大处理完成！")
+                    return history[prompt_id]
+                
+                count += 1
+                # 更新进度
+                if task_id and task_id in task_progress:
+                    progress = min(30 + (count * 2), 70)
+                    task_progress[task_id].update({
+                        "progress": progress,
+                        "message": f"正在放大处理... ({count}秒)"
+                    })
+                
+                if count % 5 == 0:  # 每5秒打印一次状态
+                    print(f"⏳ 等待中... ({count}秒)")
+                
+                time.sleep(1)
+                
+            except Exception as e:
+                print(f"检查任务状态时出错: {e}")
+                time.sleep(2)
+        
+        raise Exception(f"ComfyUI 放大任务超时 ({max_wait_time}秒)")
+    
+    def _get_image(self, server_address: str, filename: str, subfolder: str, folder_type: str) -> bytes:
+        """从服务器获取生成的图像"""
+        from urllib.parse import urlencode
+        data = {"filename": filename, "subfolder": subfolder, "type": folder_type}
+        url_values = urlencode(data)
+        
+        # 准备认证头
+        headers = {}
+        if settings.comfyui_token:
+            headers['Authorization'] = f'Bearer {settings.comfyui_token}'
+        
+        response = requests.get(f"http://{server_address}/view?{url_values}", headers=headers)
+        return response.content
+    
+    def _fallback_upscale(self, image: Image.Image) -> Image.Image:
+        """
+        降级方案：简单的4倍放大
         """
         width, height = image.size
-        new_size = (width * scale_factor, height * scale_factor)
+        new_size = (width * 4, height * 4)
         
         # 使用双三次插值进行放大
         upscaled = image.resize(new_size, Image.LANCZOS)
         return upscaled
     
     def get_name(self) -> str:
-        return "upscale"
+        return "creative_upscale"
     
     def get_description(self) -> str:
-        return "使用AI超分技术放大图片，提升分辨率和清晰度"
+        return "使用 ComfyUI 进行创意放大修复，提升图像质量和细节"
     
     def validate_parameters(self, parameters: Dict[str, Any]) -> bool:
-        """验证超分参数"""
-        if not parameters:
-            return True
-            
-        scale_factor = parameters.get('scale_factor')
-        if scale_factor and scale_factor not in [2, 4, 8]:
-            return False
-            
+        """创意放大不需要额外参数验证"""
         return True
 
 class TextToImageProcessor(ImageProcessor):
@@ -869,340 +1095,6 @@ class TextToImageProcessor(ImageProcessor):
         
         return True
 
-class CreativeUpscaleProcessor(ImageProcessor):
-    """
-    ComfyUI 创意放大修复处理器
-    
-    使用ComfyUI进行图片的创意放大和修复，参数固定，只需要输入图片
-    """
-    
-    def process(self, image: Image.Image, parameters: Dict[str, Any] = None, task_id: str = None) -> Image.Image:
-        """
-        使用 ComfyUI 进行创意放大修复
-        
-        Args:
-            image: 输入图像
-            parameters: 处理参数（此处理器参数固定）
-            task_id: 任务ID，用于进度跟踪
-        
-        Returns:
-            处理后的图像
-        """
-        try:
-            # 调用 ComfyUI API
-            image_data = self._call_comfyui_upscale_api(image, task_id)
-            
-            # 将图像数据转换为 PIL Image
-            return Image.open(io.BytesIO(image_data))
-            
-        except Exception as e:
-            print(f"ComfyUI 创意放大API调用失败: {e}")
-            # 降级方案：使用简单的放大
-            return self._fallback_upscale(image)
-    
-    def _call_comfyui_upscale_api(self, image: Image.Image, task_id: str = None) -> bytes:
-        """
-        调用 ComfyUI API 进行创意放大
-        """
-        import json
-        import uuid
-        import tempfile
-        import os
-        from urllib.parse import urlencode
-        
-        server_address = settings.comfyui_server_address
-        client_id = str(uuid.uuid4())
-        
-        # 1. 保存输入图像到临时文件
-        temp_image_path = self._save_temp_image(image)
-        
-        try:
-            # 2. 上传图像到ComfyUI服务器
-            uploaded_filename = self._upload_image_to_comfyui(temp_image_path, server_address)
-            
-            # 3. 加载放大工作流模板
-            workflow = self._load_upscale_workflow_template()
-            if not workflow:
-                raise Exception("无法加载 ComfyUI 放大工作流模板")
-            
-            # 4. 更新工作流参数（使用上传后的文件名）
-            workflow = self._update_upscale_workflow_with_uploaded_image(workflow, uploaded_filename)
-            
-            # 5. 提交到队列
-            prompt_data = {"prompt": workflow, "client_id": client_id}
-            data = json.dumps(prompt_data).encode('utf-8')
-            
-            # 准备请求头，如果有TOKEN则添加认证
-            headers = {'Content-Type': 'application/json'}
-            if settings.comfyui_token:
-                headers['Authorization'] = f'Bearer {settings.comfyui_token}'
-            
-            response = requests.post(
-                f"http://{server_address}/prompt", 
-                data=data,
-                headers=headers,
-                timeout=settings.comfyui_timeout
-            )
-            result = response.json()
-            prompt_id = result['prompt_id']
-            
-            print(f"ComfyUI 放大任务ID: {prompt_id}")
-            
-            # 6. 等待完成
-            history = self._wait_for_completion(server_address, prompt_id, task_id)
-            
-            # 7. 获取生成的图像（参考示例代码，检查多种输出键名）
-            for node_id in history['outputs']:
-                node_output = history['outputs'][node_id]
-                print(f"检查节点 {node_id}: {node_output}")
-                
-                # 检查多种可能的图像键名，优先使用b_images（处理后图像）
-                image_keys = ['b_images', 'images']
-                for key in image_keys:
-                    if key in node_output:
-                        for image_info in node_output[key]:
-                            print(f"找到图像({key}): {image_info}")
-                            image_data = self._get_image(
-                                server_address, image_info['filename'], 
-                                image_info['subfolder'], image_info['type']
-                            )
-                            return image_data
-            
-            raise Exception("未能从 ComfyUI 获取放大后的图像")
-            
-        finally:
-            # 清理临时文件
-            if os.path.exists(temp_image_path):
-                os.remove(temp_image_path)
-    
-    def _upload_image_to_comfyui(self, image_path: str, server_address: str) -> str:
-        """上传图像到ComfyUI服务器"""
-        # 准备认证头
-        headers = {}
-        if settings.comfyui_token:
-            headers['Authorization'] = f'Bearer {settings.comfyui_token}'
-        
-        with open(image_path, 'rb') as f:
-            files = {'image': f}
-            response = requests.post(f"http://{server_address}/upload/image", files=files, headers=headers)
-            if response.status_code == 200:
-                result = response.json()
-                return result['name']  # 返回上传后的文件名
-            else:
-                raise Exception(f"图像上传失败: {response.status_code}")
-    
-    def _update_upscale_workflow_with_uploaded_image(self, workflow: Dict, uploaded_filename: str) -> Dict:
-        """使用上传后的文件名更新工作流"""
-        if not workflow:
-            return None
-        
-        # 直接在工作流字典中查找LoadImage节点
-        for node_id, node in workflow.items():
-            if node.get("class_type") == "LoadImage":
-                # 更新LoadImage节点的输入图像
-                if "inputs" not in node:
-                    node["inputs"] = {}
-                node["inputs"]["image"] = uploaded_filename
-                print(f"更新LoadImage节点 {node_id} 的图像路径为: {uploaded_filename}")
-                break
-        
-        return workflow
-    
-    def _save_temp_image(self, image: Image.Image) -> str:
-        """保存图像到指定目录"""
-        import tempfile
-        import os
-        import uuid
-        
-        # 生成唯一文件名
-        filename = f"input_{uuid.uuid4().hex[:8]}.png"
-        
-        # 使用配置的目录
-        input_dir = settings.comfyui_input_dir
-        
-        # 确保目录存在
-        os.makedirs(input_dir, exist_ok=True)
-        
-        # 保存文件
-        file_path = os.path.join(input_dir, filename)
-        image.save(file_path, format='PNG')
-        
-        return file_path
-    
-    def _load_upscale_workflow_template(self) -> Dict:
-        """加载放大工作流模板"""
-        import json
-        import os
-        
-        json_file_path = os.path.join(os.getcwd(), settings.comfyui_upscale_workflow)
-        
-        try:
-            with open(json_file_path, 'r', encoding='utf-8') as f:
-                workflow = json.load(f)
-            return workflow
-        except FileNotFoundError:
-            print(f"找不到放大工作流文件: {json_file_path}")
-            # 返回一个简单的默认放大工作流模板
-            return self._get_default_upscale_workflow()
-        except json.JSONDecodeError:
-            print(f"JSON文件格式错误: {json_file_path}")
-            return self._get_default_upscale_workflow()
-    
-    def _get_default_upscale_workflow(self) -> Dict:
-        """
-        返回一个基本的放大工作流模板
-        如果找不到放大工作流文件时使用
-        """
-        return {
-            "1": {
-                "class_type": "LoadImage",
-                "inputs": {"image": "input.png"}
-            },
-            "2": {
-                "class_type": "CheckpointLoaderSimple",
-                "inputs": {"ckpt_name": "model.safetensors"}
-            },
-            "3": {
-                "class_type": "VAEDecode",
-                "inputs": {"samples": ["7", 0], "vae": ["2", 2]}
-            },
-            "4": {
-                "class_type": "VAEEncode",
-                "inputs": {"pixels": ["1", 0], "vae": ["2", 2]}
-            },
-            "5": {
-                "class_type": "CLIPTextEncode",
-                "inputs": {"text": "masterpiece, best quality, highres", "clip": ["2", 1]}
-            },
-            "6": {
-                "class_type": "CLIPTextEncode",
-                "inputs": {"text": "text, watermark, blurry", "clip": ["2", 1]}
-            },
-            "7": {
-                "class_type": "KSampler",
-                "inputs": {
-                    "seed": 42,
-                    "steps": 20,
-                    "cfg": 8,
-                    "sampler_name": "euler",
-                    "scheduler": "normal",
-                    "denoise": 0.35,
-                    "model": ["2", 0],
-                    "positive": ["5", 0],
-                    "negative": ["6", 0],
-                    "latent_image": ["4", 0]
-                }
-            },
-            "8": {
-                "class_type": "SaveImage",
-                "inputs": {"images": ["3", 0], "filename_prefix": "upscaled"}
-            }
-        }
-    
-    def _update_upscale_workflow(self, workflow: Dict, image_path: str) -> Dict:
-        """更新放大工作流中的图像路径"""
-        if not workflow:
-            return None
-        
-        import os
-        
-        # 获取图像文件名
-        image_filename = os.path.basename(image_path)
-        
-        # 参考文生图API的方式，直接在工作流字典中查找LoadImage节点
-        for node_id, node in workflow.items():
-            if node.get("class_type") == "LoadImage":
-                # 更新LoadImage节点的输入图像
-                # LoadImage节点的输入通常是 "image" 参数
-                if "inputs" not in node:
-                    node["inputs"] = {}
-                node["inputs"]["image"] = image_filename
-                print(f"更新LoadImage节点 {node_id} 的图像路径为: {image_filename}")
-                break
-        
-        return workflow
-    
-    def _wait_for_completion(self, server_address: str, prompt_id: str, task_id: str = None) -> Dict:
-        """等待图像生成完成"""
-        print("正在等待 ComfyUI 放大处理...")
-        max_wait_time = settings.comfyui_timeout
-        start_time = time.time()
-        
-        # 导入task_progress（需要在循环外访问）
-        from app.routers.image_processing import task_progress
-        
-        count = 0
-        while time.time() - start_time < max_wait_time:
-            try:
-                # 准备认证头
-                headers = {}
-                if settings.comfyui_token:
-                    headers['Authorization'] = f'Bearer {settings.comfyui_token}'
-                
-                # 查询历史状态
-                response = requests.get(f"http://{server_address}/history/{prompt_id}", headers=headers)
-                history = response.json()
-                
-                if prompt_id in history:
-                    # 任务完成
-                    if task_id and task_id in task_progress:
-                        task_progress[task_id].update({
-                            "progress": 80,
-                            "message": "放大处理完成，正在下载..."
-                        })
-                    print("✅ 放大处理完成！")
-                    return history[prompt_id]
-                
-                count += 1
-                # 更新进度
-                if task_id and task_id in task_progress:
-                    progress = min(30 + (count * 2), 70)
-                    task_progress[task_id].update({
-                        "progress": progress,
-                        "message": f"正在放大处理... ({count}秒)"
-                    })
-                
-                if count % 5 == 0:  # 每5秒打印一次状态
-                    print(f"⏳ 等待中... ({count}秒)")
-                
-                time.sleep(1)
-                
-            except Exception as e:
-                print(f"检查任务状态时出错: {e}")
-                time.sleep(2)
-        
-        raise Exception(f"ComfyUI 放大任务超时 ({max_wait_time}秒)")
-    
-    def _get_image(self, server_address: str, filename: str, subfolder: str, folder_type: str) -> bytes:
-        """从服务器获取生成的图像"""
-        from urllib.parse import urlencode
-        data = {"filename": filename, "subfolder": subfolder, "type": folder_type}
-        url_values = urlencode(data)
-        
-        response = requests.get(f"http://{server_address}/view?{url_values}")
-        return response.content
-    
-    def _fallback_upscale(self, image: Image.Image) -> Image.Image:
-        """
-        降级方案：简单的4倍放大
-        """
-        width, height = image.size
-        new_size = (width * 4, height * 4)
-        
-        # 使用双三次插值进行放大
-        upscaled = image.resize(new_size, Image.LANCZOS)
-        return upscaled
-    
-    def get_name(self) -> str:
-        return "creative_upscale"
-    
-    def get_description(self) -> str:
-        return "使用 ComfyUI 进行创意放大修复，提升图像质量和细节"
-    
-    def validate_parameters(self, parameters: Dict[str, Any]) -> bool:
-        """创意放大不需要额外参数验证"""
-        return True
-
 class ImageProcessingService:
     """
     图像处理服务管理器
@@ -1219,8 +1111,6 @@ class ImageProcessingService:
         """注册默认的处理器"""
         self.register_processor(GrayscaleProcessor())
         self.register_processor(GhibliStyleProcessor())
-        # 移除旧的外部API超分处理器
-        # self.register_processor(UpscaleProcessor())  
         self.register_processor(TextToImageProcessor())
         self.register_processor(CreativeUpscaleProcessor())
     
@@ -1254,6 +1144,7 @@ class ImageProcessingService:
             image_data: 图像二进制数据
             processing_type: 处理类型
             parameters: 处理参数
+            task_id: 任务ID，用于进度跟踪
             
         Returns:
             (处理后的图像数据, 处理时间)
