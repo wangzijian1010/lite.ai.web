@@ -8,6 +8,9 @@ import io
 from PIL import Image
 import requests
 import time
+import uuid
+import asyncio
+from concurrent.futures import ThreadPoolExecutor
 
 from app.models.schemas import ImageProcessResponse, ErrorResponse, TextToImageAsyncResponse, ProgressResponse, CreditResponse
 from app.models.models import User
@@ -356,6 +359,278 @@ async def convert_to_ghibli_style(
     )
 
 
+
+@router.post("/process-async")
+async def process_image_async(
+    file: UploadFile = File(..., description="要处理的图像文件"),
+    processing_type: str = Form(..., description="处理类型"),
+    parameters: Optional[str] = Form(None, description="处理参数 (JSON格式)"),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    异步处理图像的端点（支持进度跟踪）
+    
+    Args:
+        file: 上传的图像文件
+        processing_type: 处理类型 (creative_upscale, ghibli_style 等)
+        parameters: 可选的处理参数，JSON字符串格式
+        current_user: 当前登录用户
+        db: 数据库会话
+    
+    Returns:
+        AsyncTaskResponse: 任务ID和状态
+    """
+    import uuid
+    import asyncio
+    from concurrent.futures import ThreadPoolExecutor
+    
+    try:
+        # 检查积分是否足够
+        required_credits = 10
+        if not check_user_credits(current_user, required_credits):
+            raise HTTPException(
+                status_code=400, 
+                detail=f"积分不足，当前积分：{current_user.credits}，需要积分：{required_credits}。请充值后再试。"
+            )
+            
+        # 扣除积分
+        success = deduct_user_credits(db, current_user, required_credits)
+        if not success:
+            raise HTTPException(
+                status_code=400,
+                detail="积分扣除失败"
+            )
+        
+        # 验证文件
+        if not validate_image_file(file):
+            raise HTTPException(
+                status_code=400, 
+                detail="无效的图像文件或文件过大"
+            )
+        
+        # 生成任务ID
+        task_id = str(uuid.uuid4())
+        
+        # 初始化任务进度
+        task_progress[task_id] = {
+            'status': 'pending',
+            'progress': 0,
+            'message': '任务已创建，准备处理...',
+            'result_url': None,
+            'error': None,
+            'created_at': time.time()
+        }
+        
+        # 解析参数
+        process_parameters = {}
+        if parameters:
+            try:
+                process_parameters = json.loads(parameters)
+            except json.JSONDecodeError:
+                raise HTTPException(
+                    status_code=400,
+                    detail="参数格式错误，应为有效的JSON字符串"
+                )
+        
+        # 读取文件内容
+        file_content = await file.read()
+        
+        # 启动后台任务
+        asyncio.create_task(process_image_background(
+            task_id, file_content, processing_type, process_parameters, file.filename or "image"
+        ))
+        
+        return {
+            "success": True,
+            "message": "任务已创建",
+            "task_id": task_id,
+            "estimated_time": 120  # 预估2分钟
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"创建任务失败: {str(e)}"
+        )
+
+async def process_image_background(task_id: str, file_content: bytes, processing_type: str, parameters: dict, filename: str):
+    """
+    后台处理图像任务
+    """
+    try:
+        # 更新任务状态
+        task_progress[task_id].update({
+            'status': 'running',
+            'progress': 10,
+            'message': '开始处理图像...'
+        })
+        
+        # 在线程池中执行图像处理（因为图像处理是CPU密集型任务）
+        loop = asyncio.get_event_loop()
+        with ThreadPoolExecutor() as executor:
+            processed_data, processing_time = await loop.run_in_executor(
+                executor,
+                image_processing_service.process_image,
+                file_content,
+                processing_type,
+                parameters,
+                task_id  # 传递task_id用于进度更新
+            )
+        
+        # 保存处理后的图像
+        processed_file_path = save_processed_image(processed_data, filename)
+        
+        # 生成访问URL
+        processed_image_url = get_file_url(processed_file_path)
+        
+        # 更新任务完成状态
+        task_progress[task_id].update({
+            'status': 'completed',
+            'progress': 100,
+            'message': '处理完成',
+            'result_url': processed_image_url,
+            'completed_at': time.time()
+        })
+        
+    except Exception as e:
+        # 更新任务失败状态
+        task_progress[task_id].update({
+            'status': 'failed',
+            'progress': 0,
+            'message': '处理失败',
+            'error': str(e)
+        })
+        print(f"❌ [ASYNC TASK] Task {task_id} failed: {str(e)}")
+
+@router.post("/text-to-image-async")
+async def text_to_image_async(
+    prompt: str = Form(..., description="正向提示词"),
+    negative_prompt: Optional[str] = Form(None, description="负向提示词"),
+    model: Optional[str] = Form(None, description="模型名称"),
+    width: Optional[int] = Form(512, description="图像宽度"),
+    height: Optional[int] = Form(512, description="图像高度"),
+    steps: Optional[int] = Form(20, description="采样步数"),
+    cfg: Optional[float] = Form(8.0, description="CFG值"),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    异步文生图端点（支持进度跟踪）
+    """
+    import uuid
+    import asyncio
+    from concurrent.futures import ThreadPoolExecutor
+    
+    try:
+        # 检查积分是否足够
+        required_credits = 10
+        if not check_user_credits(current_user, required_credits):
+            raise HTTPException(
+                status_code=400, 
+                detail=f"积分不足，当前积分：{current_user.credits}，需要积分：{required_credits}。请充值后再试。"
+            )
+            
+        # 扣除积分
+        success = deduct_user_credits(db, current_user, required_credits)
+        if not success:
+            raise HTTPException(
+                status_code=400,
+                detail="积分扣除失败"
+            )
+        
+        # 生成任务ID
+        task_id = str(uuid.uuid4())
+        
+        # 初始化任务进度
+        task_progress[task_id] = {
+            'status': 'pending',
+            'progress': 0,
+            'message': '任务已创建，准备生成图像...',
+            'result_url': None,
+            'error': None,
+            'created_at': time.time()
+        }
+        
+        # 准备文生图参数
+        text_to_image_params = {
+            'prompt': prompt,
+            'negative_prompt': negative_prompt or 'text, watermark, blurry, low quality',
+            'model': model,
+            'width': width,
+            'height': height,
+            'steps': steps,
+            'cfg': cfg
+        }
+        
+        # 启动后台任务
+        asyncio.create_task(text_to_image_background(task_id, text_to_image_params))
+        
+        return {
+            "success": True,
+            "message": "文生图任务已创建",
+            "task_id": task_id,
+            "estimated_time": 180  # 预估3分钟
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"创建文生图任务失败: {str(e)}"
+        )
+
+async def text_to_image_background(task_id: str, parameters: dict):
+    """
+    后台文生图任务
+    """
+    try:
+        # 更新任务状态
+        task_progress[task_id].update({
+            'status': 'running',
+            'progress': 10,
+            'message': '开始生成图像...'
+        })
+        
+        # 在线程池中执行文生图处理
+        loop = asyncio.get_event_loop()
+        with ThreadPoolExecutor() as executor:
+            processed_data, processing_time = await loop.run_in_executor(
+                executor,
+                image_processing_service.process_image,
+                b'',  # 文生图不需要输入图像
+                'text_to_image',
+                parameters,
+                task_id  # 传递task_id用于进度更新
+            )
+        
+        # 保存生成的图像
+        processed_file_path = save_processed_image(processed_data, "generated_image")
+        
+        # 生成访问URL
+        processed_image_url = get_file_url(processed_file_path)
+        
+        # 更新任务完成状态
+        task_progress[task_id].update({
+            'status': 'completed',
+            'progress': 100,
+            'message': '图像生成完成',
+            'result_url': processed_image_url,
+            'completed_at': time.time()
+        })
+        
+    except Exception as e:
+        # 更新任务失败状态
+        task_progress[task_id].update({
+            'status': 'failed',
+            'progress': 0,
+            'message': '生成失败',
+            'error': str(e)
+        })
+        print(f"❌ [TEXT-TO-IMAGE TASK] Task {task_id} failed: {str(e)}")
 
 @router.post("/upscale")
 async def upscale_image(
