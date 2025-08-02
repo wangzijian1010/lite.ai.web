@@ -179,13 +179,16 @@
                   
                   <!-- 运行按钮 -->
                   <div v-if="selectedFile" class="run-section">
-                    <div class="selected-file-info">
-                      <div class="file-preview">
-                        <img :src="filePreviewUrl" alt="Selected file" class="preview-image" />
-                      </div>
-                      <div class="file-details">
-                        <p><strong>已选择:</strong> {{ selectedFile.name }}</p>
-                        <p><strong>大小:</strong> {{ formatFileSize(selectedFile.size) }}</p>
+                    <div class="file-preview-container">
+                      <div class="file-preview-card">
+                        <div class="preview-image-wrapper">
+                          <img :src="filePreviewUrl" alt="Selected file" class="preview-image" />
+                        </div>
+                        <div class="file-info">
+                          <div class="file-name">{{ selectedFile.name }}</div>
+                          <div class="file-size">{{ formatFileSize(selectedFile.size) }}</div>
+                          <div class="file-status">✅ 已准备好处理</div>
+                        </div>
                       </div>
                     </div>
                     
@@ -1079,6 +1082,113 @@ const handleTextToImage = async () => {
   
   .element {
     font-size: 2rem;
+  }
+}
+
+/* File Preview Styles */
+.file-preview-container {
+  margin: 24px 0;
+  display: flex;
+  justify-content: center;
+}
+
+.file-preview-card {
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 16px;
+  padding: 20px;
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  backdrop-filter: blur(10px);
+  transition: all 0.3s ease;
+  max-width: 500px;
+  width: 100%;
+}
+
+.file-preview-card:hover {
+  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(120, 119, 198, 0.3);
+  transform: translateY(-2px);
+  box-shadow: 0 8px 25px rgba(0, 0, 0, 0.2);
+}
+
+.preview-image-wrapper {
+  width: 80px;
+  height: 80px;
+  border-radius: 12px;
+  overflow: hidden;
+  flex-shrink: 0;
+  border: 2px solid rgba(255, 255, 255, 0.1);
+}
+
+.preview-image {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.file-info {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+
+.file-name {
+  color: white;
+  font-weight: 600;
+  font-size: 1rem;
+  word-break: break-word;
+  line-height: 1.3;
+}
+
+.file-size {
+  color: rgba(255, 255, 255, 0.7);
+  font-size: 0.85rem;
+}
+
+.file-status {
+  color: #4ade80;
+  font-size: 0.9rem;
+  font-weight: 500;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.run-section {
+  margin-top: 32px;
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+  align-items: center;
+}
+
+.run-btn {
+  min-height: 52px;
+  font-size: 1.1rem;
+  padding: 16px 32px;
+  width: 100%;
+  max-width: 500px;
+}
+
+@media (max-width: 768px) {
+  .file-preview-card {
+    flex-direction: column;
+    text-align: center;
+    gap: 16px;
+  }
+  
+  .preview-image-wrapper {
+    width: 120px;
+    height: 120px;
+    margin: 0 auto;
+  }
+  
+  .run-btn {
+    max-width: none;
   }
 }
 
