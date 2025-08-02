@@ -615,7 +615,7 @@ async def process_image_async(
             'result_url': None,
             'error': None,
             'created_at': time.time()
-        }
+        })
         
         # 解析参数
         process_parameters = {}
@@ -747,7 +747,7 @@ async def text_to_image_async(
             'result_url': None,
             'error': None,
             'created_at': time.time()
-        }
+        })
         
         # 准备文生图参数
         text_to_image_params = {
