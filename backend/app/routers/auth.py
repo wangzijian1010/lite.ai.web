@@ -82,15 +82,26 @@ def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(
     cached_user = user_cache_manager.get_user_by_token(token)
     if cached_user:
         print(f"🚀 从Redis缓存获取用户: {cached_user.get('username')}")
-        # 将字典转换为User对象（简单模拟）
-        user = User(
-            id=cached_user['id'],
-            username=cached_user['username'],
-            email=cached_user['email'],
-            credits=cached_user['credits'],
-            is_active=cached_user['is_active'],
-            email_verified=cached_user['email_verified']
-        )
+        # 从数据库重新获取用户对象（确保在Session中）
+        user = get_user_by_username(db, cached_user['username'])
+        if user is None:
+            # 缓存的用户已不存在，清除缓存
+            user_cache_manager.delete_token_cache(token)
+            raise credentials_exception
+        
+        # 检查缓存的积分是否需要更新（如果数据库中的积分不同）
+        if user.credits != cached_user['credits']:
+            # 更新缓存中的积分
+            user_data = {
+                'id': user.id,
+                'username': user.username,
+                'email': user.email,
+                'credits': user.credits,
+                'is_active': user.is_active,
+                'email_verified': user.email_verified
+            }
+            user_cache_manager.cache_user_by_token(token, user_data, expire=1800)
+        
         return user
     
     # 缓存未命中，从数据库查询
