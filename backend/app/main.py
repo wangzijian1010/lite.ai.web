@@ -153,6 +153,17 @@ async def startup_event():
     else:
         print("❌ 数据库连接失败，请检查配置")
     
+    # 检查Redis连接
+    from app.utils.redis_client import redis_client
+    print(f"🔍 Redis配置检查:")
+    print(f"   REDIS_URL: {settings.redis_url[:50]}...")
+    
+    if redis_client.is_connected():
+        print("✅ Redis连接成功")
+        print("🚀 缓存功能已启用")
+    else:
+        print("⚠️ Redis连接失败，将使用降级模式（无缓存）")
+    
     # Check upload directory status
     if os.path.exists(upload_dir) and os.access(upload_dir, os.W_OK):
         print(f"✅ Upload directory writable: {upload_dir}")
@@ -182,12 +193,18 @@ async def root(request: Request):
 
 @app.get("/api/health")
 async def health_check():
-    """健康检查端点"""
+    """健康检查端点（包含Redis状态）"""
+    from app.utils.redis_client import redis_client
+    
     db_status = check_db_connection()
+    redis_status = redis_client.is_connected()
+    
     return {
-        "status": "healthy" if db_status else "unhealthy",
+        "status": "healthy" if (db_status and redis_status) else "degraded",
         "service": "ghibli-ai-backend",
-        "database": "connected" if db_status else "disconnected"
+        "database": "connected" if db_status else "disconnected",
+        "redis": "connected" if redis_status else "disconnected",
+        "cache_enabled": redis_status
     }
 
 # Add startup debug information

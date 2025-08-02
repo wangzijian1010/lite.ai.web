@@ -250,8 +250,8 @@ class GhibliStyleProcessor(ImageProcessor):
         max_wait_time = settings.comfyui_timeout
         start_time = time.time()
         
-        # 导入task_progress（需要在循环外访问）
-        from app.routers.image_processing import task_progress
+        # 导入task_progress_manager（需要在循环外访问）
+        from app.utils.redis_client import task_progress_manager
         
         count = 0
         while time.time() - start_time < max_wait_time:
@@ -267,8 +267,8 @@ class GhibliStyleProcessor(ImageProcessor):
                 
                 if prompt_id in history:
                     # 任务完成
-                    if task_id and task_id in task_progress:
-                        task_progress[task_id].update({
+                    if task_id and task_progress_manager.exists(task_id):
+                        task_progress_manager.update_progress(task_id, {
                             "progress": 80,
                             "message": "吉卜力风格转换完成，正在下载..."
                         })
@@ -277,9 +277,9 @@ class GhibliStyleProcessor(ImageProcessor):
                 
                 count += 1
                 # 更新进度
-                if task_id and task_id in task_progress:
+                if task_id and task_progress_manager.exists(task_id):
                     progress = min(30 + (count * 2), 70)
-                    task_progress[task_id].update({
+                    task_progress_manager.update_progress(task_id, {
                         "progress": progress,
                         "message": f"正在转换为吉卜力风格... ({count}秒)"
                     })
@@ -611,8 +611,8 @@ class CreativeUpscaleProcessor(ImageProcessor):
         max_wait_time = settings.comfyui_timeout
         start_time = time.time()
         
-        # 导入task_progress（需要在循环外访问）
-        from app.routers.image_processing import task_progress
+        # 导入task_progress_manager（需要在循环外访问）
+        from app.utils.redis_client import task_progress_manager
         
         count = 0
         while time.time() - start_time < max_wait_time:
@@ -628,8 +628,8 @@ class CreativeUpscaleProcessor(ImageProcessor):
                 
                 if prompt_id in history:
                     # 任务完成
-                    if task_id and task_id in task_progress:
-                        task_progress[task_id].update({
+                    if task_id and task_progress_manager.exists(task_id):
+                        task_progress_manager.update_progress(task_id, {
                             "progress": 80,
                             "message": "放大处理完成，正在下载..."
                         })
@@ -638,9 +638,9 @@ class CreativeUpscaleProcessor(ImageProcessor):
                 
                 count += 1
                 # 更新进度
-                if task_id and task_id in task_progress:
+                if task_id and task_progress_manager.exists(task_id):
                     progress = min(30 + (count * 2), 70)
-                    task_progress[task_id].update({
+                    task_progress_manager.update_progress(task_id, {
                         "progress": progress,
                         "message": f"正在放大处理... ({count}秒)"
                     })
@@ -932,8 +932,8 @@ class TextToImageProcessor(ImageProcessor):
         max_wait_time = settings.comfyui_timeout
         start_time = time.time()
         
-        # 导入task_progress（需要在循环外访问）
-        from app.routers.image_processing import task_progress
+        # 导入task_progress_manager（需要在循环外访问）
+        from app.utils.redis_client import task_progress_manager
         
         progress_step = 0
         while time.time() - start_time < max_wait_time:
@@ -953,8 +953,8 @@ class TextToImageProcessor(ImageProcessor):
                 
                 if prompt_id in history:
                     # 任务完成
-                    if task_id and task_id in task_progress:
-                        task_progress[task_id].update({
+                    if task_id and task_progress_manager.exists(task_id):
+                        task_progress_manager.update_progress(task_id, {
                             "progress": 80,
                             "message": "图像生成完成，正在下载..."
                         })
@@ -962,7 +962,7 @@ class TextToImageProcessor(ImageProcessor):
                     return history[prompt_id]
                 
                 # 更新进度
-                if task_id and task_id in task_progress:
+                if task_id and task_progress_manager.exists(task_id):
                     # 检查任务在队列中的状态
                     running_queue = queue_data.get('queue_running', [])
                     pending_queue = queue_data.get('queue_pending', [])
@@ -972,7 +972,7 @@ class TextToImageProcessor(ImageProcessor):
                     if is_running:
                         # 任务正在执行，递增进度
                         progress_step = min(progress_step + 3, 70)  # 文生图进度稍快一些
-                        task_progress[task_id].update({
+                        task_progress_manager.update_progress(task_id, {
                             "progress": 30 + progress_step,
                             "message": f"正在生成图像... ({progress_step}/70%)"
                         })
@@ -983,7 +983,7 @@ class TextToImageProcessor(ImageProcessor):
                             if len(item) >= 2 and item[1] == prompt_id:
                                 position = i + 1
                                 total = len(pending_queue)
-                                task_progress[task_id].update({
+                                task_progress_manager.update_progress(task_id, {
                                     "progress": 25,
                                     "message": f"排队中... ({position}/{total})"
                                 })

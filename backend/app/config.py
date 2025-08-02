@@ -48,6 +48,12 @@ class Settings(BaseSettings):
     comfyui_input_dir: str = os.getenv("COMFYUI_INPUT_DIR", "./comfyui_temp")  # ComfyUI输入文件目录
     comfyui_timeout: int = int(os.getenv("COMFYUI_TIMEOUT", "120"))
     
+    # Redis配置
+    redis_url: str = os.getenv("REDIS_URL", "redis://localhost:6379")
+    redis_db: int = int(os.getenv("REDIS_DB", "0"))
+    redis_password: str = os.getenv("REDIS_PASSWORD", "")
+    redis_max_connections: int = int(os.getenv("REDIS_MAX_CONNECTIONS", "10"))
+    
     @property
     def allowed_extensions_list(self) -> List[str]:
         return [ext.strip().lower() for ext in self.allowed_extensions.split(",")]

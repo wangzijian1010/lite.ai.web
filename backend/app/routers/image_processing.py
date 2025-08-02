@@ -26,11 +26,12 @@ from app.utils.file_utils import (
     cleanup_file
 )
 from app.config import settings
+from app.utils.redis_client import task_progress_manager, comfyui_cache_manager
 
 router = APIRouter()
 
-# 存储任务进度的字典
-task_progress = {}
+# 任务进度现在使用Redis存储，不再需要内存字典
+# task_progress = {}  # 已替换为Redis
 
 @router.get("/progress/{task_id}")
 async def get_task_progress(task_id: str):
@@ -43,14 +44,18 @@ async def get_task_progress(task_id: str):
     Returns:
         任务进度信息
     """
-    if task_id not in task_progress:
-        raise HTTPException(status_code=404, detail="任务不存在")
+    # 使用Redis获取任务进度
+    progress_info = task_progress_manager.get_progress(task_id)
     
-    progress_info = task_progress[task_id]
+    if not progress_info:
+        raise HTTPException(status_code=404, detail="任务不存在或已过期")
     
-    # 如果任务已完成超过10分钟，清理进度信息
-    if progress_info.get('status') == 'completed' and time.time() - progress_info.get('completed_at', 0) > 600:
-        del task_progress[task_id]
+    # 检查任务是否已完成超过10分钟
+    if (progress_info.get('status') == 'completed' and 
+        'completed_at' in progress_info and
+        time.time() - float(progress_info.get('completed_at', 0)) > 600):
+        # 删除过期的任务进度
+        task_progress_manager.delete_progress(task_id)
         raise HTTPException(status_code=404, detail="任务已过期")
     
     return {
@@ -80,9 +85,23 @@ async def get_available_processors():
 @router.get("/comfyui-models")
 async def get_comfyui_models():
     """
-    获取ComfyUI可用的模型列表
+    获取ComfyUI可用的模型列表（带Redis缓存）
     """
     try:
+        # 先尝试从Redis缓存获取
+        cached_models = comfyui_cache_manager.get_cached_models()
+        if cached_models is not None:
+            print(f"🚀 从Redis缓存获取到 {len(cached_models)} 个模型")
+            return {
+                "success": True,
+                "models": cached_models,
+                "message": f"获取到 {len(cached_models)} 个可用模型（缓存）",
+                "from_cache": True
+            }
+        
+        # 缓存未命中，请求ComfyUI API
+        print("📡 缓存未命中，正在请求ComfyUI API...")
+        
         # 准备请求头
         headers = {}
         if settings.comfyui_token:
@@ -108,12 +127,16 @@ async def get_comfyui_models():
             else:
                 models = []
             
-            print(f"从ComfyUI获取到 {len(models)} 个模型")
+            # 缓存模型列表（1小时过期）
+            comfyui_cache_manager.cache_models(models, expire=3600)
+            
+            print(f"✅ 从ComfyUI获取到 {len(models)} 个模型并已缓存")
             
             return {
                 "success": True,
                 "models": models,
-                "message": f"获取到 {len(models)} 个可用模型"
+                "message": f"获取到 {len(models)} 个可用模型",
+                "from_cache": False
             }
         else:
             print(f"ComfyUI模型列表请求失败: {response.status_code}")
@@ -448,15 +471,15 @@ async def ghibli_style_async(
         # 生成任务ID
         task_id = str(uuid.uuid4())
         
-        # 初始化任务进度
-        task_progress[task_id] = {
+        # 初始化任务进度（使用Redis）
+        task_progress_manager.set_progress(task_id, {
             'status': 'pending',
             'progress': 0,
             'message': '任务已创建，准备转换为吉卜力风格...',
             'result_url': None,
             'error': None,
             'created_at': time.time()
-        }
+        })
         
         # 读取文件内容
         file_content = await file.read()
@@ -486,8 +509,8 @@ async def ghibli_style_background(task_id: str, file_content: bytes, filename: s
     后台吉卜力风格转换任务
     """
     try:
-        # 更新任务状态
-        task_progress[task_id].update({
+        # 更新任务状态（使用Redis）
+        task_progress_manager.update_progress(task_id, {
             'status': 'running',
             'progress': 10,
             'message': '开始转换为吉卜力风格...'
@@ -512,7 +535,7 @@ async def ghibli_style_background(task_id: str, file_content: bytes, filename: s
         processed_image_url = get_file_url(processed_file_path)
         
         # 更新任务完成状态
-        task_progress[task_id].update({
+        task_progress_manager.update_progress(task_id, {
             'status': 'completed',
             'progress': 100,
             'message': '吉卜力风格转换完成',
@@ -522,7 +545,7 @@ async def ghibli_style_background(task_id: str, file_content: bytes, filename: s
         
     except Exception as e:
         # 更新任务失败状态
-        task_progress[task_id].update({
+        task_progress_manager.update_progress(task_id, {
             'status': 'failed',
             'progress': 0,
             'message': '吉卜力风格转换失败',
@@ -585,7 +608,7 @@ async def process_image_async(
         task_id = str(uuid.uuid4())
         
         # 初始化任务进度
-        task_progress[task_id] = {
+        task_progress_manager.set_progress(task_id, {
             'status': 'pending',
             'progress': 0,
             'message': '任务已创建，准备处理...',
@@ -634,7 +657,7 @@ async def process_image_background(task_id: str, file_content: bytes, processing
     """
     try:
         # 更新任务状态
-        task_progress[task_id].update({
+        task_progress_manager.update_progress(task_id, {
             'status': 'running',
             'progress': 10,
             'message': '开始处理图像...'
@@ -659,7 +682,7 @@ async def process_image_background(task_id: str, file_content: bytes, processing
         processed_image_url = get_file_url(processed_file_path)
         
         # 更新任务完成状态
-        task_progress[task_id].update({
+        task_progress_manager.update_progress(task_id, {
             'status': 'completed',
             'progress': 100,
             'message': '处理完成',
@@ -669,7 +692,7 @@ async def process_image_background(task_id: str, file_content: bytes, processing
         
     except Exception as e:
         # 更新任务失败状态
-        task_progress[task_id].update({
+        task_progress_manager.update_progress(task_id, {
             'status': 'failed',
             'progress': 0,
             'message': '处理失败',
@@ -717,7 +740,7 @@ async def text_to_image_async(
         task_id = str(uuid.uuid4())
         
         # 初始化任务进度
-        task_progress[task_id] = {
+        task_progress_manager.set_progress(task_id, {
             'status': 'pending',
             'progress': 0,
             'message': '任务已创建，准备生成图像...',
@@ -761,7 +784,7 @@ async def text_to_image_background(task_id: str, parameters: dict):
     """
     try:
         # 更新任务状态
-        task_progress[task_id].update({
+        task_progress_manager.update_progress(task_id, {
             'status': 'running',
             'progress': 10,
             'message': '开始生成图像...'
@@ -786,7 +809,7 @@ async def text_to_image_background(task_id: str, parameters: dict):
         processed_image_url = get_file_url(processed_file_path)
         
         # 更新任务完成状态
-        task_progress[task_id].update({
+        task_progress_manager.update_progress(task_id, {
             'status': 'completed',
             'progress': 100,
             'message': '图像生成完成',
@@ -796,7 +819,7 @@ async def text_to_image_background(task_id: str, parameters: dict):
         
     except Exception as e:
         # 更新任务失败状态
-        task_progress[task_id].update({
+        task_progress_manager.update_progress(task_id, {
             'status': 'failed',
             'progress': 0,
             'message': '生成失败',

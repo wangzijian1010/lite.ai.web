@@ -13,6 +13,7 @@ from app.models.schemas import (
 from app.utils.auth import verify_password, get_password_hash, create_access_token, verify_token
 from app.utils.email import send_verification_email, generate_verification_code
 from app.utils.credits import check_user_credits, deduct_user_credits
+from app.utils.redis_client import user_cache_manager
 from app.config import settings
 
 router = APIRouter()
@@ -70,15 +71,47 @@ def authenticate_user(db: Session, username_or_email: str, password: str):
     return user
 
 def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(get_db)):
+    """获取当前用户（带Redis缓存优化）"""
     credentials_exception = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
         detail="Could not validate credentials",
         headers={"WWW-Authenticate": "Bearer"},
     )
+    
+    # 先尝试从Redis缓存获取用户信息
+    cached_user = user_cache_manager.get_user_by_token(token)
+    if cached_user:
+        print(f"🚀 从Redis缓存获取用户: {cached_user.get('username')}")
+        # 将字典转换为User对象（简单模拟）
+        user = User(
+            id=cached_user['id'],
+            username=cached_user['username'],
+            email=cached_user['email'],
+            credits=cached_user['credits'],
+            is_active=cached_user['is_active'],
+            email_verified=cached_user['email_verified']
+        )
+        return user
+    
+    # 缓存未命中，从数据库查询
+    print("📡 缓存未命中，从数据库查询用户信息")
     username = verify_token(token, credentials_exception)
     user = get_user_by_username(db, username=username)
     if user is None:
         raise credentials_exception
+    
+    # 缓存用户信息（30分钟过期）
+    user_data = {
+        'id': user.id,
+        'username': user.username,
+        'email': user.email,
+        'credits': user.credits,
+        'is_active': user.is_active,
+        'email_verified': user.email_verified
+    }
+    user_cache_manager.cache_user_by_token(token, user_data, expire=1800)
+    print(f"✅ 已缓存用户信息: {user.username}")
+    
     return user
 
 @router.post("/send-verification-code", response_model=SendVerificationCodeResponse)
