@@ -169,13 +169,15 @@ export const useGhibliStore = defineStore('ghibli', {
       return this.processImage(file, 'creative_upscale')
     },
 
-    async faceSwap(sourceFile: File, targetFile: File): Promise<string> {
+    async faceSwap(sourceFile: File, targetFile: File, sourceFaceIndex: number = 0, targetFaceIndex: number = 0): Promise<string> {
       this.isProcessing = true
       
       try {
         const formData = new FormData()
         formData.append('source_file', sourceFile)
         formData.append('target_file', targetFile)
+        formData.append('source_face_index', sourceFaceIndex.toString())
+        formData.append('target_face_index', targetFaceIndex.toString())
         
         const response = await axios.post<ProcessingResult>(
           `${API_BASE_URL}/api/face-swap`,

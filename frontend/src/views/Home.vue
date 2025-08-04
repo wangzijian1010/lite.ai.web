@@ -193,6 +193,23 @@
                           </div>
                         </div>
                       </div>
+                      
+                      <!-- Source Face Selection -->
+                      <div v-if="sourceFile" class="face-selection">
+                        <label for="sourceFaceSelect">选择源图人脸:</label>
+                        <select 
+                          id="sourceFaceSelect"
+                          v-model="sourceFaceIndex" 
+                          class="face-select"
+                        >
+                          <option value="0">第1张人脸</option>
+                          <option value="1">第2张人脸</option>
+                          <option value="2">第3张人脸</option>
+                          <option value="3">第4张人脸</option>
+                          <option value="4">第5张人脸</option>
+                        </select>
+                        <p class="face-hint">如果图片中有多张人脸，请选择要使用的人脸</p>
+                      </div>
                     </div>
 
                     <!-- Target Image Upload -->
@@ -218,6 +235,23 @@
                             <button @click.stop="clearTargetFile" class="clear-btn">✕</button>
                           </div>
                         </div>
+                      </div>
+                      
+                      <!-- Target Face Selection -->
+                      <div v-if="targetFile" class="face-selection">
+                        <label for="targetFaceSelect">选择目标人脸:</label>
+                        <select 
+                          id="targetFaceSelect"
+                          v-model="targetFaceIndex" 
+                          class="face-select"
+                        >
+                          <option value="0">第1张人脸</option>
+                          <option value="1">第2张人脸</option>
+                          <option value="2">第3张人脸</option>
+                          <option value="3">第4张人脸</option>
+                          <option value="4">第5张人脸</option>
+                        </select>
+                        <p class="face-hint">选择要被替换的目标人脸</p>
                       </div>
                     </div>
                   </div>
@@ -401,6 +435,8 @@ const sourceFile = ref<File | null>(null)
 const targetFile = ref<File | null>(null)
 const sourcePreviewUrl = ref<string>('')
 const targetPreviewUrl = ref<string>('')
+const sourceFaceIndex = ref<number>(0)
+const targetFaceIndex = ref<number>(0)
 
 // 认证相关方法
 const showAuthModal = (mode: 'login' | 'register') => {
@@ -599,11 +635,13 @@ const handleTargetDrop = (event: DragEvent) => {
 const clearSourceFile = () => {
   sourceFile.value = null
   sourcePreviewUrl.value = ''
+  sourceFaceIndex.value = 0
 }
 
 const clearTargetFile = () => {
   targetFile.value = null
   targetPreviewUrl.value = ''
+  targetFaceIndex.value = 0
 }
 
 const handleFaceSwap = async () => {
@@ -627,8 +665,13 @@ const handleFaceSwap = async () => {
     processing.value = true
     originalImage.value = URL.createObjectURL(sourceFile.value)
     
-    // Call face swap API (placeholder - returns original image for now)
-    const result = await ghibliStore.faceSwap(sourceFile.value, targetFile.value)
+    // Call face swap API with face selection parameters
+    const result = await ghibliStore.faceSwap(
+      sourceFile.value, 
+      targetFile.value, 
+      sourceFaceIndex.value, 
+      targetFaceIndex.value
+    )
     
     resultImage.value = result
   } catch (error) {
@@ -1610,6 +1653,56 @@ const handleFaceSwap = async () => {
   opacity: 0.6;
   cursor: not-allowed;
   transform: none !important;
+}
+
+/* Face Selection Styles */
+.face-selection {
+  margin-top: 16px;
+  padding: 16px;
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.face-selection label {
+  display: block;
+  color: white;
+  font-weight: 600;
+  font-size: 0.95rem;
+  margin-bottom: 8px;
+}
+
+.face-select {
+  width: 100%;
+  padding: 10px 12px;
+  border: 2px solid rgba(255, 255, 255, 0.2);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.08);
+  color: white;
+  font-size: 0.9rem;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  backdrop-filter: blur(10px);
+}
+
+.face-select:focus {
+  outline: none;
+  border-color: rgba(120, 119, 198, 0.6);
+  background: rgba(120, 119, 198, 0.1);
+  box-shadow: 0 0 0 3px rgba(120, 119, 198, 0.2);
+}
+
+.face-select option {
+  background: rgba(40, 40, 60, 0.95);
+  color: white;
+  padding: 8px;
+}
+
+.face-hint {
+  margin-top: 8px;
+  font-size: 0.8rem;
+  color: rgba(255, 255, 255, 0.6);
+  font-style: italic;
 }
 
 @media (max-width: 768px) {
