@@ -843,3 +843,90 @@ async def upscale_image(
         current_user=current_user,
         db=db
     )
+
+@router.post("/face-swap", response_model=ImageProcessResponse)
+async def face_swap(
+    source_file: UploadFile = File(..., description="源图像文件（提供人脸）"),
+    target_file: UploadFile = File(..., description="目标图像文件（被替换人脸）"),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    换脸功能端点（需要登录）
+    目前返回原图作为占位，等待算法服务实现
+    
+    Args:
+        source_file: 源图像文件（提供人脸的图片）
+        target_file: 目标图像文件（被替换人脸的图片）
+        current_user: 当前登录用户
+        db: 数据库会话
+    
+    Returns:
+        ImageProcessResponse: 处理结果（目前返回源图像作为占位）
+    """
+    try:
+        # 检查积分是否足够
+        required_credits = 15  # 换脸功能消耗更多积分
+        if not check_user_credits(current_user, required_credits):
+            raise HTTPException(
+                status_code=400, 
+                detail=f"积分不足，当前积分：{current_user.credits}，需要积分：{required_credits}。请充值后再试。"
+            )
+            
+        # 扣除积分
+        success = deduct_user_credits(db, current_user, required_credits)
+        if not success:
+            raise HTTPException(
+                status_code=400,
+                detail="积分扣除失败"
+            )
+        
+        # 验证文件
+        if not validate_image_file(source_file):
+            raise HTTPException(
+                status_code=400, 
+                detail="无效的源图像文件或文件过大"
+            )
+        
+        if not validate_image_file(target_file):
+            raise HTTPException(
+                status_code=400, 
+                detail="无效的目标图像文件或文件过大"
+            )
+        
+        # 读取文件内容
+        source_content = await source_file.read()
+        target_content = await target_file.read()
+        
+        # TODO: 这里是占位实现，返回源图像
+        # 等算法服务实现后，这里应该调用真正的换脸算法
+        # 目前简单返回源图像作为结果
+        
+        # 暂时使用源图像作为处理结果
+        processed_data = source_content
+        processing_time = 1.0  # 占位处理时间
+        
+        # 保存处理后的图像
+        processed_file_path = save_processed_image(
+            processed_data, 
+            source_file.filename or "face_swap_result"
+        )
+        
+        # 生成访问URL
+        processed_image_url = get_file_url(processed_file_path)
+        
+        return ImageProcessResponse(
+            success=True,
+            message="换脸处理完成（当前为占位实现，返回源图像）",
+            processed_image_url=processed_image_url,
+            processing_type="face_swap",
+            processing_time=processing_time
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"换脸处理失败: {str(e)}"
+        )

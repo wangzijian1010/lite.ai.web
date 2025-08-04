@@ -106,6 +106,13 @@
                     🎯 AI文生图
                     <span class="credits-cost">消耗 10 积分</span>
                   </button>
+                  <button 
+                    @click="selectedProcessing = 'face_swap'"
+                    :class="['processing-btn', { active: selectedProcessing === 'face_swap' }]"
+                  >
+                    🔄 AI换脸
+                    <span class="credits-cost">消耗 15 积分</span>
+                  </button>
                 </div>
               </div>
               
@@ -158,7 +165,81 @@
                 </button>
               </div>
               
-              <!-- 图片上传 (非文生图功能) -->
+              <!-- Face Swap功能 -->
+              <div v-if="selectedProcessing === 'face_swap'">
+                <div class="face-swap-container">
+                  <div class="face-swap-uploads">
+                    <!-- Source Image Upload -->
+                    <div class="face-swap-upload-section">
+                      <h4>Source Image (源图)</h4>
+                      <p>Upload the image with the face you want to use</p>
+                      <div class="face-swap-upload-area" @click="triggerSourceUpload" @dragover.prevent @drop="handleSourceDrop">
+                        <input 
+                          ref="sourceFileInput" 
+                          type="file" 
+                          accept="image/*" 
+                          @change="handleSourceSelect" 
+                          style="display: none"
+                        />
+                        <div v-if="!sourceFile" class="upload-placeholder">
+                          <div class="upload-icon">📷</div>
+                          <div class="upload-text">Click or drag source image here</div>
+                        </div>
+                        <div v-else class="uploaded-preview">
+                          <img :src="sourcePreviewUrl" alt="Source" class="preview-img" />
+                          <div class="file-info">
+                            <div class="file-name">{{ sourceFile.name }}</div>
+                            <button @click.stop="clearSourceFile" class="clear-btn">✕</button>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+
+                    <!-- Target Image Upload -->
+                    <div class="face-swap-upload-section">
+                      <h4>Target Image (目标图)</h4>
+                      <p>Upload the image where you want to place the face</p>
+                      <div class="face-swap-upload-area" @click="triggerTargetUpload" @dragover.prevent @drop="handleTargetDrop">
+                        <input 
+                          ref="targetFileInput" 
+                          type="file" 
+                          accept="image/*" 
+                          @change="handleTargetSelect" 
+                          style="display: none"
+                        />
+                        <div v-if="!targetFile" class="upload-placeholder">
+                          <div class="upload-icon">🎯</div>
+                          <div class="upload-text">Click or drag target image here</div>
+                        </div>
+                        <div v-else class="uploaded-preview">
+                          <img :src="targetPreviewUrl" alt="Target" class="preview-img" />
+                          <div class="file-info">
+                            <div class="file-name">{{ targetFile.name }}</div>
+                            <button @click.stop="clearTargetFile" class="clear-btn">✕</button>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  <!-- Face Swap Process Button -->
+                  <div v-if="sourceFile && targetFile" class="face-swap-process">
+                    <button 
+                      @click="handleFaceSwap"
+                      :disabled="processing"
+                      class="btn btn-primary face-swap-btn"
+                    >
+                      <span v-if="!processing">🔄 Start Face Swap</span>
+                      <span v-else class="loading-content">
+                        <div class="loading"></div>
+                        <span>Processing face swap...</span>
+                      </span>
+                    </button>
+                  </div>
+                </div>
+              </div>
+              
+              <!-- 图片上传 (非文生图和换脸功能) -->
               <div v-else>
                 <!-- 吉卜力风格和创意放大功能显示进度 -->
                 <div v-if="(selectedProcessing === 'ghibli_style' || selectedProcessing === 'creative_upscale') && processing && ghibliStore.currentTask" class="upload-progress">
@@ -305,7 +386,7 @@ const dropdownOpen = ref(false)
 const originalImage = ref<string>('')
 const resultImage = ref<string>('')
 const processing = ref(false)
-const selectedProcessing = ref<'ghibli_style' | 'grayscale' | 'text_to_image' | 'creative_upscale'>('ghibli_style')
+const selectedProcessing = ref<'ghibli_style' | 'grayscale' | 'text_to_image' | 'creative_upscale' | 'face_swap'>('ghibli_style')
 const textToImageParams = ref({
   prompt: '',
   negative_prompt: 'text, watermark, blurry, low quality'
@@ -455,6 +536,93 @@ const handleTextToImage = async () => {
   } catch (error) {
     console.error('文生图失败:', error)
     const errorMessage = error instanceof Error ? error.message : '图像生成失败，请重试'
+    alert(errorMessage)
+  } finally {
+    processing.value = false
+  }
+}
+
+// Face swap methods
+const triggerSourceUpload = () => {
+  const input = document.querySelector('input[ref="sourceFileInput"]') as HTMLInputElement
+  if (input) input.click()
+}
+
+const triggerTargetUpload = () => {
+  const input = document.querySelector('input[ref="targetFileInput"]') as HTMLInputElement
+  if (input) input.click()
+}
+
+const handleSourceSelect = (event: Event) => {
+  const target = event.target as HTMLInputElement
+  if (target.files && target.files[0]) {
+    sourceFile.value = target.files[0]
+    sourcePreviewUrl.value = URL.createObjectURL(target.files[0])
+  }
+}
+
+const handleTargetSelect = (event: Event) => {
+  const target = event.target as HTMLInputElement
+  if (target.files && target.files[0]) {
+    targetFile.value = target.files[0]
+    targetPreviewUrl.value = URL.createObjectURL(target.files[0])
+  }
+}
+
+const handleSourceDrop = (event: DragEvent) => {
+  event.preventDefault()
+  if (event.dataTransfer?.files && event.dataTransfer.files[0]) {
+    sourceFile.value = event.dataTransfer.files[0]
+    sourcePreviewUrl.value = URL.createObjectURL(event.dataTransfer.files[0])
+  }
+}
+
+const handleTargetDrop = (event: DragEvent) => {
+  event.preventDefault()
+  if (event.dataTransfer?.files && event.dataTransfer.files[0]) {
+    targetFile.value = event.dataTransfer.files[0]
+    targetPreviewUrl.value = URL.createObjectURL(event.dataTransfer.files[0])
+  }
+}
+
+const clearSourceFile = () => {
+  sourceFile.value = null
+  sourcePreviewUrl.value = ''
+}
+
+const clearTargetFile = () => {
+  targetFile.value = null
+  targetPreviewUrl.value = ''
+}
+
+const handleFaceSwap = async () => {
+  if (!sourceFile.value || !targetFile.value) return
+  
+  try {
+    // 检查用户是否登录
+    if (!authStore.isAuthenticated) {
+      alert('请先登录后再使用功能')
+      showAuthModal('login')
+      return
+    }
+
+    // 检查积分是否足够
+    const creditCheck = await authStore.checkCredits(15)
+    if (!creditCheck.success) {
+      alert(`积分不足！当前积分：${creditCheck.current_credits}，需要积分：15`)
+      return
+    }
+
+    processing.value = true
+    originalImage.value = URL.createObjectURL(sourceFile.value)
+    
+    // Call face swap API (placeholder - returns original image for now)
+    const result = await ghibliStore.faceSwap(sourceFile.value, targetFile.value)
+    
+    resultImage.value = result
+  } catch (error) {
+    console.error('换脸失败:', error)
+    const errorMessage = error instanceof Error ? error.message : '换脸失败，请重试'
     alert(errorMessage)
   } finally {
     processing.value = false
@@ -1269,5 +1437,187 @@ const handleTextToImage = async () => {
   border-color: rgba(255, 107, 107, 0.8);
   background: rgba(255, 107, 107, 0.1);
   transform: translateY(-2px);
+}
+
+/* Face Swap Styles */
+.face-swap-container {
+  display: flex;
+  flex-direction: column;
+  gap: 32px;
+}
+
+.face-swap-uploads {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 24px;
+}
+
+.face-swap-upload-section {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.face-swap-upload-section h4 {
+  color: white;
+  font-size: 1.2rem;
+  font-weight: 600;
+  margin: 0;
+}
+
+.face-swap-upload-section p {
+  color: rgba(255, 255, 255, 0.7);
+  font-size: 0.9rem;
+  margin: 0;
+}
+
+.face-swap-upload-area {
+  border: 2px dashed rgba(255, 255, 255, 0.3);
+  border-radius: 16px;
+  padding: 24px;
+  min-height: 200px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.face-swap-upload-area:hover {
+  border-color: rgba(120, 119, 198, 0.6);
+  background: rgba(120, 119, 198, 0.05);
+  transform: translateY(-2px);
+}
+
+.upload-placeholder {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  text-align: center;
+}
+
+.upload-icon {
+  font-size: 3rem;
+  opacity: 0.7;
+}
+
+.upload-text {
+  color: rgba(255, 255, 255, 0.7);
+  font-size: 1rem;
+}
+
+.uploaded-preview {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+}
+
+.preview-img {
+  max-width: 100%;
+  max-height: 150px;
+  border-radius: 12px;
+  object-fit: cover;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+}
+
+.file-info {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  padding: 8px 12px;
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+}
+
+.file-name {
+  color: white;
+  font-size: 0.9rem;
+  font-weight: 500;
+  flex: 1;
+  text-align: center;
+  word-break: break-word;
+}
+
+.clear-btn {
+  background: rgba(255, 107, 107, 0.2);
+  border: 1px solid rgba(255, 107, 107, 0.4);
+  color: rgba(255, 107, 107, 0.9);
+  border-radius: 50%;
+  width: 24px;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  font-size: 0.8rem;
+  transition: all 0.2s ease;
+}
+
+.clear-btn:hover {
+  background: rgba(255, 107, 107, 0.3);
+  border-color: rgba(255, 107, 107, 0.6);
+  transform: scale(1.1);
+}
+
+.face-swap-process {
+  display: flex;
+  justify-content: center;
+  margin-top: 16px;
+}
+
+.face-swap-btn {
+  min-height: 52px;
+  font-size: 1.1rem;
+  padding: 16px 32px;
+  width: 100%;
+  max-width: 400px;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  border: none;
+  border-radius: 50px;
+  color: white;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+}
+
+.face-swap-btn:hover:not(:disabled) {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 25px rgba(102, 126, 234, 0.4);
+}
+
+.face-swap-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+  transform: none !important;
+}
+
+@media (max-width: 768px) {
+  .face-swap-uploads {
+    grid-template-columns: 1fr;
+    gap: 20px;
+  }
+  
+  .face-swap-upload-area {
+    min-height: 160px;
+    padding: 20px;
+  }
+  
+  .upload-icon {
+    font-size: 2.5rem;
+  }
+  
+  .face-swap-btn {
+    max-width: none;
+  }
 }
 </style>

@@ -169,6 +169,59 @@ export const useGhibliStore = defineStore('ghibli', {
       return this.processImage(file, 'creative_upscale')
     },
 
+    async faceSwap(sourceFile: File, targetFile: File): Promise<string> {
+      this.isProcessing = true
+      
+      try {
+        const formData = new FormData()
+        formData.append('source_file', sourceFile)
+        formData.append('target_file', targetFile)
+        
+        const response = await axios.post<ProcessingResult>(
+          `${API_BASE_URL}/api/face-swap`,
+          formData,
+          {
+            headers: {
+              'Content-Type': 'multipart/form-data'
+            },
+            timeout: 600000 // 10分钟超时
+          }
+        )
+        
+        if (response.data.success && response.data.processed_image_url) {
+          // 确保图片URL包含完整的后端地址
+          const imageUrl = response.data.processed_image_url.startsWith('http') 
+            ? response.data.processed_image_url 
+            : `${API_BASE_URL}${response.data.processed_image_url}`;
+          
+          this.processingHistory.push({
+            original: URL.createObjectURL(sourceFile),
+            result: imageUrl,
+            timestamp: Date.now(),
+            processingType: 'face_swap',
+            processingTime: response.data.processing_time
+          })
+          
+          return imageUrl;
+        } else {
+          throw new Error(response.data.message || '换脸失败')
+        }
+      } catch (error) {
+        if (axios.isAxiosError(error)) {
+          if (error.code === 'ECONNABORTED') {
+            throw new Error('请求超时，请重试')
+          } else if (error.response) {
+            throw new Error(error.response.data?.detail || '服务器错误')
+          } else if (error.request) {
+            throw new Error('无法连接到服务器，请检查网络连接')
+          }
+        }
+        throw new Error('换脸时发生未知错误')
+      } finally {
+        this.isProcessing = false
+      }
+    },
+
     async creativeUpscaleImageWithProgress(file: File): Promise<string> {
       this.isProcessing = true
       this.currentTask = null
