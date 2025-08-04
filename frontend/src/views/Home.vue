@@ -396,6 +396,12 @@ const textToImageParams = ref({
 const selectedFile = ref<File | null>(null)
 const filePreviewUrl = ref<string>('')
 
+// Face swap related states
+const sourceFile = ref<File | null>(null)
+const targetFile = ref<File | null>(null)
+const sourcePreviewUrl = ref<string>('')
+const targetPreviewUrl = ref<string>('')
+
 // 认证相关方法
 const showAuthModal = (mode: 'login' | 'register') => {
   authMode.value = mode
@@ -543,14 +549,19 @@ const handleTextToImage = async () => {
 }
 
 // Face swap methods
+const sourceFileInput = ref<HTMLInputElement>()
+const targetFileInput = ref<HTMLInputElement>()
+
 const triggerSourceUpload = () => {
-  const input = document.querySelector('input[ref="sourceFileInput"]') as HTMLInputElement
-  if (input) input.click()
+  if (sourceFileInput.value) {
+    sourceFileInput.value.click()
+  }
 }
 
 const triggerTargetUpload = () => {
-  const input = document.querySelector('input[ref="targetFileInput"]') as HTMLInputElement
-  if (input) input.click()
+  if (targetFileInput.value) {
+    targetFileInput.value.click()
+  }
 }
 
 const handleSourceSelect = (event: Event) => {
