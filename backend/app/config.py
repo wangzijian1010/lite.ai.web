@@ -54,6 +54,10 @@ class Settings(BaseSettings):
     redis_password: str = os.getenv("REDIS_PASSWORD", "")
     redis_max_connections: int = int(os.getenv("REDIS_MAX_CONNECTIONS", "10"))
     
+    # 换脸服务配置
+    face_swap_api_url: str = os.getenv("FACE_SWAP_API_URL", "https://u227558-b71f-4cfbc0f8.westc.gpuhub.com:8443")
+    face_swap_timeout: int = int(os.getenv("FACE_SWAP_TIMEOUT", "300"))  # 5分钟超时
+
     @property
     def allowed_extensions_list(self) -> List[str]:
         return [ext.strip().lower() for ext in self.allowed_extensions.split(",")]

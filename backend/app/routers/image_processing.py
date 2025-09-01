@@ -848,22 +848,28 @@ async def upscale_image(
 async def face_swap(
     source_file: UploadFile = File(..., description="源图像文件（提供人脸）"),
     target_file: UploadFile = File(..., description="目标图像文件（被替换人脸）"),
+    source_index: int = Form(0, description="源图像中的人脸索引"),
+    target_index: int = Form(0, description="目标图像中的人脸索引"),
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
     """
     换脸功能端点（需要登录）
-    目前返回原图作为占位，等待算法服务实现
+    调用GPU换脸服务进行真实的人脸替换
     
     Args:
         source_file: 源图像文件（提供人脸的图片）
         target_file: 目标图像文件（被替换人脸的图片）
+        source_index: 源图像中的人脸索引（默认0）
+        target_index: 目标图像中的人脸索引（默认0）
         current_user: 当前登录用户
         db: 数据库会话
     
     Returns:
-        ImageProcessResponse: 处理结果（目前返回源图像作为占位）
+        ImageProcessResponse: 处理结果
     """
+    import base64
+    
     try:
         # 检查积分是否足够
         required_credits = 15  # 换脸功能消耗更多积分
@@ -898,13 +904,65 @@ async def face_swap(
         source_content = await source_file.read()
         target_content = await target_file.read()
         
-        # TODO: 这里是占位实现，返回源图像
-        # 等算法服务实现后，这里应该调用真正的换脸算法
-        # 目前简单返回源图像作为结果
-        
-        # 暂时使用源图像作为处理结果
-        processed_data = source_content
-        processing_time = 1.0  # 占位处理时间
+        # 调用GPU换脸服务
+        start_time = time.time()
+        try:
+            # 准备请求数据
+            source_base64 = base64.b64encode(source_content).decode('utf-8')
+            target_base64 = base64.b64encode(target_content).decode('utf-8')
+            
+            # 准备表单数据用于文件上传版本
+            files = {
+                'source_image': ('source.jpg', io.BytesIO(source_content), 'image/jpeg'),
+                'target_image': ('target.jpg', io.BytesIO(target_content), 'image/jpeg')
+            }
+            
+            data = {
+                'source_index': source_index,
+                'target_index': target_index
+            }
+            
+            # 调用GPU换脸API（使用文件上传版本）
+            face_swap_url = f"{settings.face_swap_api_url}/swap_faces_file"
+            
+            print(f"🔄 调用换脸API: {face_swap_url}")
+            print(f"📊 参数: source_index={source_index}, target_index={target_index}")
+            
+            response = requests.post(
+                face_swap_url,
+                files=files,
+                data=data,
+                timeout=settings.face_swap_timeout
+            )
+            
+            if response.status_code != 200:
+                raise Exception(f"换脸API调用失败，状态码: {response.status_code}, 响应: {response.text}")
+            
+            result = response.json()
+            
+            if not result.get('success'):
+                raise Exception(result.get('message', '换脸处理失败'))
+            
+            # 获取结果图像的base64数据
+            result_image_base64 = result.get('result_image')
+            if not result_image_base64:
+                raise Exception('换脸API未返回结果图像')
+            
+            # 解码base64图像
+            processed_data = base64.b64decode(result_image_base64)
+            processing_time = result.get('processing_time', time.time() - start_time)
+            
+            print(f"✅ 换脸成功，处理时间: {processing_time:.2f}秒")
+            print(f"📈 检测到源图人脸: {result.get('source_faces_count', 0)}个")
+            print(f"📈 检测到目标人脸: {result.get('target_faces_count', 0)}个")
+            
+        except requests.exceptions.Timeout:
+            raise Exception("换脸服务响应超时，请稍后重试")
+        except requests.exceptions.ConnectionError:
+            raise Exception("无法连接到换脸服务，请检查服务状态")
+        except Exception as e:
+            print(f"❌ 调用换脸API失败: {str(e)}")
+            raise Exception(f"换脸处理失败: {str(e)}")
         
         # 保存处理后的图像
         processed_file_path = save_processed_image(
@@ -917,7 +975,7 @@ async def face_swap(
         
         return ImageProcessResponse(
             success=True,
-            message="换脸处理完成（当前为占位实现，返回源图像）",
+            message="换脸处理完成",
             processed_image_url=processed_image_url,
             processing_type="face_swap",
             processing_time=processing_time
@@ -926,6 +984,7 @@ async def face_swap(
     except HTTPException:
         raise
     except Exception as e:
+        print(f"🔴 换脸处理异常: {str(e)}")
         raise HTTPException(
             status_code=500,
             detail=f"换脸处理失败: {str(e)}"

@@ -176,8 +176,8 @@ export const useGhibliStore = defineStore('ghibli', {
         const formData = new FormData()
         formData.append('source_file', sourceFile)
         formData.append('target_file', targetFile)
-        formData.append('source_face_index', sourceFaceIndex.toString())
-        formData.append('target_face_index', targetFaceIndex.toString())
+        formData.append('source_index', sourceFaceIndex.toString())
+        formData.append('target_index', targetFaceIndex.toString())
         
         const response = await axios.post<ProcessingResult>(
           `${API_BASE_URL}/api/face-swap`,
